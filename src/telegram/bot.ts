@@ -216,7 +216,7 @@ export function createBot() {
   process.once('SIGINT', () => bot.stop('SIGINT'))
   process.once('SIGTERM', () => bot.stop('SIGTERM'))
 
-  console.log('[telegram] ✅ Bot iniciado — @casaemae_ofertas_bot')
+  console.log('[telegram] ✅ Bot iniciado')
   return bot
 }
 

@@ -121,12 +121,12 @@ npm run dev
 Terminal mostra:
 ```
 ✅ Servidor rodando em http://localhost:3000
-[telegram] ✅ Bot iniciado — @casaemae_ofertas_bot
+[telegram] ✅ Bot iniciado
 ```
 
 ### Via Telegram (recomendado)
 
-1. Abra o bot no Telegram
+1. Abra o seu bot no Telegram (o que você criou no BotFather)
 2. Mande qualquer link de produto
 3. Siga o fluxo conversacional:
 
