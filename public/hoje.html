@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ofertas de Hoje — Mamãe Econômica</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f0f2f5;
+      color: #1a1a1a;
+      min-height: 100vh;
+      padding: 24px 16px;
+    }
+
+    .container { max-width: 800px; margin: 0 auto; }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    header h1 { font-size: 1.4rem; font-weight: 700; }
+
+    .subtitle {
+      font-size: 0.85rem;
+      color: #888;
+      margin-bottom: 24px;
+    }
+
+    .nav-link {
+      font-size: 0.85rem;
+      color: #128c7e;
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .nav-link:hover { text-decoration: underline; }
+
+    .section-title {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      color: #888;
+      margin: 24px 0 12px;
+    }
+
+    .deal-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 12px;
+    }
+
+    .deal-card {
+      background: #fff;
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: 0 1px 4px rgba(0,0,0,.08);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .deal-card img {
+      width: 100%;
+      aspect-ratio: 1;
+      object-fit: cover;
+      background: #f5f5f5;
+    }
+
+    .deal-body {
+      padding: 12px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .deal-name {
+      font-size: 0.85rem;
+      font-weight: 600;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .deal-prices {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .price-original {
+      font-size: 0.78rem;
+      color: #999;
+      text-decoration: line-through;
+    }
+
+    .price-promo {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #128c7e;
+    }
+
+    .badge {
+      font-size: 0.72rem;
+      padding: 2px 7px;
+      border-radius: 20px;
+      font-weight: 600;
+    }
+    .badge-discount { background: #fff0f0; color: #c0392b; }
+    .badge-rating { background: #fffbf0; color: #e08800; }
+    .badge-cat { background: #f0f0f0; color: #555; }
+
+    .deal-time {
+      font-size: 0.72rem;
+      color: #aaa;
+      margin-top: auto;
+    }
+
+    .btn-buy {
+      display: block;
+      margin: 0 12px 12px;
+      padding: 9px;
+      background: #25d366;
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-align: center;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .btn-buy:hover { opacity: .9; }
+
+    .empty {
+      text-align: center;
+      padding: 48px 16px;
+      color: #aaa;
+    }
+    .empty p { font-size: 1rem; margin-bottom: 8px; }
+    .empty span { font-size: 0.85rem; }
+
+    .count-badge {
+      display: inline-block;
+      background: #25d366;
+      color: #fff;
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 20px;
+      margin-left: 8px;
+      vertical-align: middle;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <h1>🛍️ Ofertas de Hoje</h1>
+    <a class="nav-link" href="/">← Painel</a>
+  </header>
+  <p class="subtitle" id="subtitle">Carregando...</p>
+
+  <div id="content"></div>
+
+</div>
+
+<script>
+  async function load() {
+    try {
+      const [dealsRes, catRes] = await Promise.all([
+        fetch('/api/sent-today'),
+        fetch('/api/categories'),
+      ])
+      const deals = await dealsRes.json()
+      const categoryMeta = await catRes.json()
+
+      const subtitle = document.getElementById('subtitle')
+      const content = document.getElementById('content')
+
+      const today = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })
+      subtitle.textContent = `${today} · ${deals.length} oferta${deals.length !== 1 ? 's' : ''} enviada${deals.length !== 1 ? 's' : ''}`
+
+      if (!deals.length) {
+        content.innerHTML = `<div class="empty"><p>Nenhuma oferta enviada ainda hoje.</p><span>As sugestões aparecem aqui após serem enviadas no Telegram.</span></div>`
+        return
+      }
+
+      const byCategory = {}
+      deals.forEach(d => { if (!byCategory[d.category]) byCategory[d.category] = []; byCategory[d.category].push(d) })
+
+      content.innerHTML = Object.entries(byCategory).map(([cat, items]) => {
+        const meta = categoryMeta[cat] || { emoji: '🛍️', label: cat }
+        return renderSection(`${meta.emoji} ${meta.label}`, items)
+      }).filter(Boolean).join('')
+    } catch {
+      document.getElementById('subtitle').textContent = 'Erro ao carregar ofertas.'
+    }
+  }
+
+  function renderSection(title, deals) {
+    if (!deals.length) return ''
+    return `
+      <p class="section-title">${title} <span class="count-badge">${deals.length}</span></p>
+      <div class="deal-grid">
+        ${deals.map(dealCard).join('')}
+      </div>`
+  }
+
+  function dealCard(deal) {
+    const time = new Date(deal.sentAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+    const hasDiscount = deal.discountPercent > 0
+
+    return `
+      <div class="deal-card">
+        <img src="${deal.imageUrl || ''}" alt=""
+          onerror="this.style.background='#f0f0f0'" loading="lazy" />
+        <div class="deal-body">
+          <div class="deal-name">${deal.title}</div>
+          <div class="deal-prices">
+            ${deal.originalPrice && hasDiscount
+              ? `<span class="price-original">${deal.originalPrice}</span>` : ''}
+            <span class="price-promo">${deal.price}</span>
+            ${hasDiscount
+              ? `<span class="badge badge-discount">-${deal.discountPercent}%</span>` : ''}
+          </div>
+          <div>
+            ${deal.ratingStar ? `<span class="badge badge-rating">⭐ ${deal.ratingStar}</span> ` : ''}
+            <span class="badge badge-cat">${deal.category === 'maternidade' ? '🍼' : '🏠'} ${deal.category}</span>
+          </div>
+          <div class="deal-time">Enviado às ${time}</div>
+        </div>
+        <a class="btn-buy" href="${deal.affiliateUrl}" target="_blank" rel="noopener">
+          🛒 Ver oferta
+        </a>
+      </div>`
+  }
+
+  load()
+</script>
+</body>
+</html>

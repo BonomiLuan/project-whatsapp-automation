@@ -3,6 +3,11 @@ import type { WizardContext } from 'telegraf/scenes'
 import { scrapeProduct, type ProductData } from '../scraper/productScraper.js'
 import { buildMessagePayload, fmt } from '../content/messageBuilder.js'
 import { sendOfferMessage } from '../api/metaClient.js'
+import { generateAffiliateLink, fetchShopeeProductByUrl, CATEGORY_META, type SubIds, type DealCategory } from '../api/shopeeAffiliate.js'
+import { type UnifiedDeal } from '../server/index.js'
+
+import type { Telegram } from 'telegraf'
+let telegramApi: Telegram | null = null
 
 interface WizardState {
   product?: ProductData
@@ -13,29 +18,49 @@ type Ctx = WizardContext & { wizard: { state: WizardState } }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+function formatMessage({
+  emoji, title, originalPrice, price, coupon, buyUrl, groupUrl,
+}: {
+  emoji: string
+  title: string
+  originalPrice?: string
+  price?: string
+  coupon?: string
+  buyUrl: string
+  groupUrl: string
+}): string {
+  const priceLine = originalPrice && price
+    ? `~${originalPrice}~ por *${price}*`
+    : price ? `*${price}*` : ''
+
+  return [
+    `${emoji} *${title}*`,
+    ``,
+    priceLine,
+    coupon ? `🎟️ Cupom: *${coupon}*` : '',
+    ``,
+    `🔗 Link para comprar:`,
+    buyUrl,
+    ``,
+    groupUrl ? `💬 Link para o grupo:` : '',
+    groupUrl || '',
+    ``,
+    `⏰ Aproveite enquanto durar!`,
+    ``,
+    `#Anúncio`,
+  ].filter(v => v !== undefined && !(v === '' && !groupUrl)).join('\n').trim()
+}
+
 function buildTelegramText(product: ProductData, coupon: string, groupUrl: string): string {
-  const promo = fmt(product.price)
-  const orig = fmt(product.originalPrice)
-
-  // "de R$180,00 por R$115,00"  or just "por R$115,00"
-  const priceLine = orig && promo
-    ? `de <s>${orig}</s> por <b>${promo}</b>`
-    : `por <b>${promo || 'Consulte o site'}</b>`
-
-  const lines = [
-    `🛍️ <b>Oferta especial!</b>`,
-    ``,
-    `<b>${esc(product.name)}</b> ${priceLine}`,
-    coupon ? `🎟️ Cupom: <code>${esc(coupon)}</code>` : '',
-    ``,
-    `Compre aqui: ${esc(product.originalUrl)}`,
-    ``,
-    groupUrl ? `💰 Grupo de ofertas: ${esc(groupUrl)}` : '',
-    ``,
-    `Aproveite enquanto durar! ⏰`,
-  ].filter(line => line !== undefined && !(line === '' && !groupUrl)).join('\n')
-
-  return lines.trim()
+  return formatMessage({
+    emoji: '🛍️',
+    title: product.name,
+    originalPrice: fmt(product.originalPrice),
+    price: fmt(product.price),
+    coupon: coupon || undefined,
+    buyUrl: product.originalUrl,
+    groupUrl,
+  })
 }
 
 async function sendToTelegram(ctx: Ctx, product: ProductData, coupon: string) {
@@ -44,13 +69,13 @@ async function sendToTelegram(ctx: Ctx, product: ProductData, coupon: string) {
 
   if (product.imageUrl) {
     try {
-      await ctx.replyWithPhoto(product.imageUrl, { caption: text, parse_mode: 'HTML' })
+      await ctx.replyWithPhoto(product.imageUrl, { caption: text })
       return
     } catch {
       // fallback to text if image fails
     }
   }
-  await ctx.reply(text, { parse_mode: 'HTML' })
+  await ctx.reply(text)
 }
 
 async function sendToWhatsApp(ctx: Ctx, product: ProductData, coupon: string) {
@@ -64,7 +89,7 @@ async function sendToWhatsApp(ctx: Ctx, product: ProductData, coupon: string) {
 const offerWizard = new Scenes.WizardScene<Ctx>(
   'offer',
 
-  // Step 1 — receive URL, scrape
+  // Step 1 — receive URL, auto-generate affiliate link (Shopee), then scrape
   async (ctx) => {
     const text = ctx.message && 'text' in ctx.message ? ctx.message.text.trim() : ''
     if (!text.startsWith('http')) {
@@ -72,15 +97,42 @@ const offerWizard = new Scenes.WizardScene<Ctx>(
       return
     }
 
-    const status = await ctx.reply('🔍 Extraindo produto...')
+    const status = await ctx.reply('🔍 Processando produto...')
+    const isShopee = text.includes('shopee.com.br') || text.includes('s.shopee.com.br')
 
     try {
+      // Auto-generate affiliate link + fetch product info from Shopee API in parallel
+      let affiliateUrl = text
+      let shopeeApiInfo: Awaited<ReturnType<typeof fetchShopeeProductByUrl>> = null
+
+      if (isShopee) {
+        const subIds: SubIds = { source: 'telegram', trigger: 'manual', category: 'geral', slot: 'none' }
+        const [affiliateResult, apiResult] = await Promise.allSettled([
+          generateAffiliateLink(text, subIds),
+          fetchShopeeProductByUrl(text),
+        ])
+        if (affiliateResult.status === 'fulfilled') affiliateUrl = affiliateResult.value
+        if (apiResult.status === 'fulfilled') shopeeApiInfo = apiResult.value
+        await ctx.telegram.editMessageText(
+          ctx.chat!.id, status.message_id, undefined,
+          `🔗 Link de afiliado gerado!\n\n⏳ Extraindo dados do produto...`,
+        )
+      }
+
       const product = await scrapeProduct(text)
+      product.originalUrl = affiliateUrl
+
+      // Use API price if scraper didn't find one
+      if (!product.price && shopeeApiInfo?.price) {
+        product.price = fmt(shopeeApiInfo.price)
+      }
+
       ctx.wizard.state.product = product
 
+      const affiliateNote = isShopee ? '\n🔗 Link de afiliado: gerado ✅' : ''
       await ctx.telegram.editMessageText(
         ctx.chat!.id, status.message_id, undefined,
-        `📦 <b>${esc(product.name)}</b>${product.imageUrl ? '\n🖼️ Imagem encontrada' : ''}`,
+        `📦 <b>${esc(product.name)}</b>${product.imageUrl ? '\n🖼️ Imagem encontrada' : ''}${affiliateNote}`,
         { parse_mode: 'HTML' }
       )
 
@@ -202,16 +254,74 @@ export function createBot() {
   bot.use(session())
   bot.use(stage.middleware())
 
-  bot.start((ctx) =>
-    ctx.reply(
-      '👋 Olá! Manda o link de um produto e eu monto a oferta.\n\nPosso enviar direto aqui no Telegram ou no WhatsApp!',
-      Markup.removeKeyboard()
-    )
-  )
+  const HELP_TEXT = [
+    '👋 <b>Comandos disponíveis:</b>',
+    '',
+    '/ofertas — ver todas as ofertas do site (Maternidade + Casa)',
+    '/atualizar — buscar novas ofertas agora',
+    '/ajuda — mostrar esta mensagem',
+    '',
+    '🔗 Ou mande qualquer link de produto e eu monto a oferta com link de afiliado.',
+  ].join('\n')
+
+  bot.start((ctx) => ctx.reply(HELP_TEXT, { parse_mode: 'HTML', ...Markup.removeKeyboard() }))
+  bot.command('ajuda', (ctx) => ctx.reply(HELP_TEXT, { parse_mode: 'HTML' }))
+
+  bot.command('atualizar', async (ctx) => {
+    const status = await ctx.reply('🔄 Buscando novas ofertas...')
+    try {
+      const { refreshDeals, getCachedDeals } = await import('../server/index.js')
+      await refreshDeals()
+      const count = getCachedDeals().length
+      await ctx.telegram.editMessageText(
+        ctx.chat!.id, status.message_id, undefined,
+        `✅ ${count} ofertas atualizadas! Use /ofertas para ver.`
+      )
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Erro desconhecido'
+      await ctx.telegram.editMessageText(ctx.chat!.id, status.message_id, undefined, `❌ ${msg}`)
+    }
+  })
+
+  bot.command('ofertas', async (ctx) => {
+    const { getCachedDeals } = await import('../server/index.js')
+    const deals = getCachedDeals()
+
+    if (!deals.length) {
+      await ctx.reply('🔍 Nenhuma oferta no momento. Tente /atualizar.')
+      return
+    }
+
+    const maternidade = deals.filter(d => d.category === 'maternidade')
+    const casa = deals.filter(d => d.category === 'casa')
+
+    if (maternidade.length) {
+      await ctx.reply(`🍼 <b>Maternidade — ${maternidade.length} ofertas</b>`, { parse_mode: 'HTML' })
+      for (const deal of maternidade) {
+        await sendDealCard(ctx, deal)
+        await new Promise(r => setTimeout(r, 300))
+      }
+    }
+
+    if (casa.length) {
+      await ctx.reply(`🏠 <b>Casa — ${casa.length} ofertas</b>`, { parse_mode: 'HTML' })
+      for (const deal of casa) {
+        await sendDealCard(ctx, deal)
+        await new Promise(r => setTimeout(r, 300))
+      }
+    }
+  })
 
   bot.hears(/https?:\/\//, (ctx) => ctx.scene.enter('offer'))
 
   bot.launch()
+  telegramApi = bot.telegram
+
+  bot.telegram.setMyCommands([
+    { command: 'ofertas', description: 'Ver ofertas do site (Maternidade + Casa)' },
+    { command: 'atualizar', description: 'Buscar novas ofertas agora' },
+    { command: 'ajuda', description: 'Ver todos os comandos' },
+  ])
 
   process.once('SIGINT', () => bot.stop('SIGINT'))
   process.once('SIGTERM', () => bot.stop('SIGTERM'))
@@ -219,6 +329,119 @@ export function createBot() {
   console.log('[telegram] ✅ Bot iniciado')
   return bot
 }
+
+function getTargetChatIds(): string[] {
+  const multi = process.env.TELEGRAM_CHAT_IDS?.split(',').map(s => s.trim()).filter(Boolean) ?? []
+  const single = process.env.TELEGRAM_CHAT_ID?.trim()
+  const ids = multi.length > 0 ? multi : single ? [single] : []
+  return [...new Set(ids)]
+}
+
+export async function sendDealToChat(deal: UnifiedDeal): Promise<void> {
+  const chatIds = getTargetChatIds()
+  if (!telegramApi || chatIds.length === 0) throw new Error('Bot ou TELEGRAM_CHAT_ID não configurado')
+
+  const groupUrl = process.env.WHATSAPP_GROUP_URL || ''
+  const categoryEmoji = CATEGORY_META[deal.category]?.emoji ?? '🛍️'
+
+  let dealUrl = deal.affiliateUrl
+  if (deal.productLink) {
+    try {
+      const subIds: SubIds = {
+        source: 'telegram', trigger: 'auto',
+        category: deal.category as SubIds['category'],
+        slot: 'none',
+      }
+      dealUrl = await generateAffiliateLink(deal.productLink, subIds)
+    } catch { /* fallback */ }
+  }
+
+  const text = formatMessage({
+    emoji: categoryEmoji,
+    title: deal.title,
+    originalPrice: deal.originalPrice,
+    price: deal.price,
+    buyUrl: dealUrl,
+    groupUrl,
+  })
+
+  for (let i = 0; i < chatIds.length; i++) {
+    if (i > 0) await new Promise(r => setTimeout(r, 60_000))
+    const id = chatIds[i]
+    if (deal.imageUrl) {
+      try {
+        await telegramApi!.sendPhoto(id, deal.imageUrl, { caption: text })
+        continue
+      } catch { /* fallback to text */ }
+    }
+    await telegramApi!.sendMessage(id, text)
+  }
+}
+
+export async function sendProductToChat(
+  product: ProductData,
+  coupon: string,
+): Promise<void> {
+  const chatIds = getTargetChatIds()
+  if (!telegramApi || chatIds.length === 0) throw new Error('Bot ou TELEGRAM_CHAT_ID não configurado')
+
+  const groupUrl = process.env.WHATSAPP_GROUP_URL || ''
+  const text = buildTelegramText(product, coupon, groupUrl)
+
+  for (let i = 0; i < chatIds.length; i++) {
+    if (i > 0) await new Promise(r => setTimeout(r, 60_000))
+    const id = chatIds[i]
+    if (product.imageUrl) {
+      try {
+        await telegramApi!.sendPhoto(id, product.imageUrl, { caption: text })
+        continue
+      } catch { /* fallback to text */ }
+    }
+    await telegramApi!.sendMessage(id, text)
+  }
+}
+
+async function sendDealCard(ctx: Ctx, deal: UnifiedDeal) {
+  const isShopee = deal.source === 'shopee'
+
+  let dealUrl = deal.affiliateUrl
+  if (isShopee && deal.productLink) {
+    try {
+      const subIds: SubIds = {
+        source: 'telegram', trigger: 'manual',
+        category: deal.category as SubIds['category'],
+        slot: 'none',
+      }
+      dealUrl = await generateAffiliateLink(deal.productLink, subIds)
+    } catch { /* fallback to pre-generated link */ }
+  }
+
+  const groupUrl = process.env.WHATSAPP_GROUP_URL || ''
+  const categoryEmoji = CATEGORY_META[deal.category]?.emoji ?? '🛍️'
+
+  const text = formatMessage({
+    emoji: categoryEmoji,
+    title: deal.title,
+    originalPrice: deal.originalPrice,
+    price: deal.price,
+    buyUrl: dealUrl,
+    groupUrl,
+  })
+
+  const buttons = Markup.inlineKeyboard([[Markup.button.url('🛒 Abrir oferta', dealUrl)]])
+
+  try {
+    if (deal.imageUrl) {
+      await ctx.replyWithPhoto(deal.imageUrl, { caption: text, ...buttons })
+    } else {
+      await ctx.reply(text, buttons)
+    }
+  } catch {
+    await ctx.reply(text, buttons)
+  }
+}
+
+export { sendDealCard }
 
 function esc(text: string): string {
   return text.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c] || c))

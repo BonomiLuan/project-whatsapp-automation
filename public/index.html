@@ -15,7 +15,7 @@
       padding: 24px 16px;
     }
 
-    .container { max-width: 680px; margin: 0 auto; }
+    .container { max-width: 960px; margin: 0 auto; }
 
     header {
       display: flex;
@@ -25,6 +25,18 @@
     }
     header h1 { font-size: 1.4rem; font-weight: 700; }
     header span { font-size: 1.6rem; }
+    .btn-logout {
+      margin-left: 12px;
+      padding: 6px 12px;
+      background: none;
+      border: 1.5px solid #ddd;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      color: #666;
+      cursor: pointer;
+      transition: border-color 0.2s, color 0.2s;
+    }
+    .btn-logout:hover { border-color: #c62828; color: #c62828; }
 
     .card {
       background: #fff;
@@ -63,7 +75,10 @@
     .btn:disabled { opacity: .5; cursor: not-allowed; }
     .btn-primary { background: #25d366; color: #fff; }
     .btn-secondary { background: #f0f0f0; color: #333; }
-    .btn-send { background: #128c7e; color: #fff; width: 100%; margin-top: 16px; padding: 13px; font-size: 1rem; }
+    .send-row { display: flex; gap: 10px; margin-top: 16px; }
+    .btn-send { color: #fff; flex: 1; padding: 13px; font-size: 1rem; }
+    .btn-send-tg { background: #229ed9; }
+    .btn-send-wa { background: #128c7e; }
 
     /* Preview */
     #preview { display: none; }
@@ -117,6 +132,28 @@
 
     .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; margin-right: 6px; }
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Deals */
+    .deals-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .deals-header h2 { margin: 0; }
+    .btn-refresh { background: none; border: 1.5px solid #e0e0e0; border-radius: 8px; padding: 5px 10px; font-size: 0.8rem; cursor: pointer; color: #666; }
+    .btn-refresh:hover { border-color: #25d366; color: #25d366; }
+    .tabs-bar { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 0; scrollbar-width: none; }
+    .tabs-bar::-webkit-scrollbar { display: none; }
+    .tab-btn { flex-shrink: 0; padding: 7px 14px; border: 1.5px solid #e0e0e0; border-radius: 20px; font-size: 0.82rem; font-weight: 600; cursor: pointer; background: #fff; color: #555; transition: all .15s; white-space: nowrap; }
+    .tab-btn.active { background: #25d366; border-color: #25d366; color: #fff; }
+    .tab-btn:hover:not(.active) { border-color: #25d366; color: #25d366; }
+    .deals-hint { font-size: 0.8rem; color: #888; margin-bottom: 14px; padding: 8px 12px; background: #fffbf0; border-radius: 8px; border-left: 3px solid #f0a500; }
+    .deal-item { display: flex; gap: 12px; padding: 12px 0; border-bottom: 1px solid #f0f0f0; align-items: flex-start; }
+    .deal-item:last-child { border-bottom: none; }
+    .deal-thumb { width: 64px; height: 64px; object-fit: cover; border-radius: 10px; border: 1px solid #eee; flex-shrink: 0; background: #f5f5f5; }
+    .deal-info { flex: 1; min-width: 0; }
+    .deal-title { font-size: 0.88rem; font-weight: 600; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-bottom: 4px; }
+    .deal-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .deal-price { font-size: 0.88rem; font-weight: 700; color: #128c7e; }
+    .deal-store { font-size: 0.75rem; background: #f0f0f0; padding: 2px 7px; border-radius: 20px; color: #555; }
+    .btn-use-deal { margin-top: 6px; background: none; border: 1.5px solid #25d366; color: #25d366; border-radius: 8px; padding: 4px 10px; font-size: 0.8rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
+    .btn-use-deal:hover { background: #25d366; color: #fff; }
   </style>
 </head>
 <body>
@@ -125,6 +162,8 @@
   <header>
     <span>🛍️</span>
     <h1>WhatsApp Offer Sender</h1>
+    <a href="/hoje" style="font-size:0.85rem;color:#128c7e;text-decoration:none;font-weight:600;margin-left:auto">📋 Ofertas de hoje</a>
+    <button class="btn-logout" onclick="logout()">Sair</button>
   </header>
 
   <!-- Step 1: URL Input -->
@@ -167,8 +206,24 @@
         </div>
       </div>
     </div>
-    <button class="btn btn-send" id="btnSend">📲 Enviar para WhatsApp</button>
+    <div class="send-row">
+      <button class="btn btn-send btn-send-tg" id="btnSendTelegram">📱 Telegram</button>
+      <button class="btn btn-send btn-send-wa" id="btnSendWhatsApp">💬 WhatsApp</button>
+    </div>
     <div class="status" id="sendStatus"></div>
+  </div>
+
+  <!-- Shopee Deals -->
+  <div class="card">
+    <div class="deals-header">
+      <h2>🛍️ Ofertas</h2>
+      <button class="btn-refresh" id="btnRefreshDeals">↻ Atualizar</button>
+    </div>
+    <p class="deals-hint">🟢 Link de afiliado gerado automaticamente — só clicar em "Usar oferta".</p>
+    <div class="tabs-bar" id="tabsBar"></div>
+    <ul class="history-list" id="dealsList" style="margin-top:12px">
+      <li class="empty">Carregando...</li>
+    </ul>
   </div>
 
   <!-- History -->
@@ -184,6 +239,11 @@
 <script>
   const $ = id => document.getElementById(id)
 
+  async function logout() {
+    await fetch('/api/logout', { method: 'POST' })
+    window.location.href = '/login.html'
+  }
+
   function showStatus(elId, type, msg) {
     const el = $(elId)
     el.className = `status ${type}`
@@ -196,8 +256,147 @@
     $(elId).className = 'status'
   }
 
-  // Load history on page open
+  let categoryMeta = {}
+  let allDeals = []
+  let activeTab = ''
+
+  async function loadDeals() {
+    console.log('[loadDeals] iniciando...')
+    try {
+      console.log('[loadDeals] buscando /api/deals e /api/categories...')
+      const [dealsRes, catRes] = await Promise.all([fetch('/api/deals'), fetch('/api/categories')])
+      console.log('[loadDeals] status deals:', dealsRes.status, '| status categories:', catRes.status)
+
+      if (!dealsRes.ok) {
+        console.error('[loadDeals] /api/deals retornou erro HTTP', dealsRes.status)
+        throw new Error(`/api/deals retornou ${dealsRes.status}`)
+      }
+      if (!catRes.ok) {
+        console.error('[loadDeals] /api/categories retornou erro HTTP', catRes.status)
+        throw new Error(`/api/categories retornou ${catRes.status}`)
+      }
+
+      allDeals = await dealsRes.json()
+      categoryMeta = await catRes.json()
+      console.log('[loadDeals] deals recebidos:', allDeals.length, '| categorias:', Object.keys(categoryMeta).length)
+      console.log('[loadDeals] categorias disponíveis:', Object.keys(categoryMeta))
+      if (allDeals.length > 0) {
+        console.log('[loadDeals] exemplo de deal:', JSON.stringify(allDeals[0]).slice(0, 120))
+      }
+      renderTabs()
+    } catch (err) {
+      console.error('[loadDeals] ERRO:', err)
+      $('dealsList').innerHTML = `<li class="empty">Erro ao carregar ofertas: ${err.message}</li>`
+    }
+  }
+
+  // Load deals and history on page open
+  loadDeals()
   loadHistory()
+
+  function dealCard(deal) {
+    const hasDiscount = deal.discountPercent > 0
+    const data = encodeURIComponent(JSON.stringify({
+      productLink: deal.productLink || deal.affiliateUrl,
+      affiliateUrl: deal.affiliateUrl,
+      price: deal.price || '',
+      originalPrice: deal.originalPrice || '',
+      title: deal.title,
+      imageUrl: deal.imageUrl,
+      category: deal.category,
+      source: deal.source,
+    }))
+    return `
+      <li class="deal-item">
+        <img class="deal-thumb" src="${deal.imageUrl || ''}" alt=""
+          onerror="this.style.background='#f0f0f0';this.style.display='block'" />
+        <div class="deal-info">
+          <div class="deal-title">${deal.title}</div>
+          <div class="deal-meta">
+            ${deal.originalPrice && hasDiscount
+              ? `<span style="font-size:0.8rem;color:#999;text-decoration:line-through">${deal.originalPrice}</span>`
+              : ''}
+            ${deal.price ? `<span class="deal-price">${deal.price}</span>` : ''}
+            ${hasDiscount ? `<span class="deal-store" style="background:#fff0f0;color:#c0392b">-${deal.discountPercent}%</span>` : ''}
+            ${deal.ratingStar ? `<span class="deal-store" style="background:#fffbf0;color:#e08800">⭐ ${deal.ratingStar}</span>` : ''}
+            ${deal.commissionRate ? `<span class="deal-store" style="background:#e8f8ef;color:#128c7e">💰 ${deal.commissionRate}</span>` : ''}
+          </div>
+          <button class="btn-use-deal" onclick="useDeal('${data}')">
+            ✅ Usar oferta (link pronto)
+          </button>
+        </div>
+      </li>`
+  }
+
+  function renderTabs() {
+    console.log('[renderTabs] allDeals:', allDeals.length, '| activeTab:', activeTab)
+    const byCategory = {}
+    allDeals.forEach(d => { if (!byCategory[d.category]) byCategory[d.category] = []; byCategory[d.category].push(d) })
+    const cats = Object.keys(byCategory)
+    console.log('[renderTabs] cats encontradas:', cats)
+    if (!cats.length) { $('dealsList').innerHTML = '<li class="empty">Nenhuma oferta encontrada.</li>'; return }
+    if (!activeTab || !byCategory[activeTab]) activeTab = cats[0]
+    console.log('[renderTabs] tab ativa:', activeTab, '| deals na tab:', (byCategory[activeTab] || []).length)
+    $('tabsBar').innerHTML = cats.map(cat => {
+      const meta = categoryMeta[cat] || { emoji: '🛍️', label: cat }
+      const activeClass = cat === activeTab ? ' active' : ''
+      return `<button class="tab-btn${activeClass}" onclick="selectTab('${cat}')">${meta.emoji} ${meta.label}</button>`
+    }).join('')
+    $('dealsList').innerHTML = (byCategory[activeTab] || []).map(dealCard).join('')
+  }
+
+  function selectTab(cat) { activeTab = cat; renderTabs() }
+
+  async function useDeal(encodedData) {
+    const deal = JSON.parse(decodeURIComponent(encodedData))
+
+    if (deal.source === 'shopee') {
+      // Generate fresh affiliate link with subIds for tracking
+      let finalUrl = deal.affiliateUrl
+      try {
+        const res = await fetch('/api/affiliate-link', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            url: deal.productLink,
+            subIds: { source: 'web', trigger: 'manual', category: deal.category, slot: 'none' },
+          }),
+        })
+        if (res.ok) {
+          const data = await res.json()
+          finalUrl = data.affiliateUrl
+        }
+      } catch { /* fallback to pre-generated link */ }
+
+      $('productUrl').value = finalUrl
+      $('productUrl').dataset.imageUrl = deal.imageUrl
+      if (deal.price) $('fieldPrice').value = deal.price
+      if (deal.title) $('fieldName').value = deal.title.slice(0, 60)
+      $('fieldOriginalPrice').value = deal.originalPrice || ''
+      $('fieldCoupon').value = ''
+      $('fieldGroupUrl').value = ''
+      $('previewImg').src = deal.imageUrl
+      $('preview').style.display = 'block'
+      const priceInput = $('fieldPrice')
+      if (!deal.price) { priceInput.classList.add('required-empty'); priceInput.focus() }
+      else { priceInput.classList.remove('required-empty') }
+      $('preview').scrollIntoView({ behavior: 'smooth' })
+    }
+  }
+
+  $('btnRefreshDeals').addEventListener('click', async () => {
+    const btn = $('btnRefreshDeals')
+    btn.textContent = '↻ Atualizando...'
+    btn.disabled = true
+    $('dealsList').innerHTML = '<li class="empty">Carregando...</li>'; $('tabsBar').innerHTML = ''
+    try {
+      await fetch('/api/deals/refresh', { method: 'POST' })
+      await loadDeals()
+    } finally {
+      btn.textContent = '↻ Atualizar'
+      btn.disabled = false
+    }
+  })
 
   async function loadHistory() {
     try {
@@ -277,27 +476,40 @@
     $('fieldPrice').classList.toggle('required-empty', !$('fieldPrice').value.trim())
   })
 
-  // Send message
-  $('btnSend').addEventListener('click', async () => {
-    if (!$('fieldPrice').value.trim()) {
-      $('fieldPrice').classList.add('required-empty')
-      $('fieldPrice').focus()
-      showStatus('sendStatus', 'error', '⚠️ Preencha o preço antes de enviar.')
-      return
-    }
-    $('btnSend').disabled = true
-    showStatus('sendStatus', 'loading', 'Enviando para o WhatsApp...')
-
-    const productData = {
+  function getProductData() {
+    return {
       name: $('fieldName').value,
       price: $('fieldPrice').value,
       originalPrice: $('fieldOriginalPrice').value || undefined,
       imageUrl: $('productUrl').dataset.imageUrl || '',
       originalUrl: $('productUrl').value,
     }
+  }
+
+  function validatePrice() {
+    if (!$('fieldPrice').value.trim()) {
+      $('fieldPrice').classList.add('required-empty')
+      $('fieldPrice').focus()
+      showStatus('sendStatus', 'error', '⚠️ Preencha o preço antes de enviar.')
+      return false
+    }
+    return true
+  }
+
+  async function sendTo(channel) {
+    if (!validatePrice()) return
+
+    const isTelegram = channel === 'telegram'
+    const btnId = isTelegram ? 'btnSendTelegram' : 'btnSendWhatsApp'
+    const btn = $(btnId)
+    btn.disabled = true
+    showStatus('sendStatus', 'loading', isTelegram ? 'Enviando para o Telegram...' : 'Enviando para o WhatsApp...')
+
+    const endpoint = isTelegram ? '/api/send-telegram' : '/api/send'
+    const productData = getProductData()
 
     try {
-      const res = await fetch('/api/send', {
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -307,17 +519,19 @@
         }),
       })
       const data = await res.json()
-
       if (!res.ok) throw new Error(data.error || 'Erro ao enviar')
 
-      showStatus('sendStatus', 'success', '✅ Mensagem enviada! Verifique seu WhatsApp.')
+      showStatus('sendStatus', 'success', isTelegram ? '✅ Enviado no Telegram!' : '✅ Enviado no WhatsApp!')
       loadHistory()
     } catch (err) {
       showStatus('sendStatus', 'error', `❌ ${err.message}`)
     } finally {
-      $('btnSend').disabled = false
+      btn.disabled = false
     }
-  })
+  }
+
+  $('btnSendTelegram').addEventListener('click', () => sendTo('telegram'))
+  $('btnSendWhatsApp').addEventListener('click', () => sendTo('whatsapp'))
 </script>
 </body>
 </html>

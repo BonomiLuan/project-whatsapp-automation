@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Entrar · Ofertas Maternidade</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f0f2f5;
+      color: #1a1a1a;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+      padding: 40px 36px;
+      width: 100%;
+      max-width: 380px;
+    }
+
+    .logo {
+      text-align: center;
+      margin-bottom: 28px;
+    }
+    .logo .icon { font-size: 2.4rem; }
+    .logo h1 {
+      font-size: 1.2rem;
+      font-weight: 700;
+      margin-top: 8px;
+      color: #1a1a1a;
+    }
+    .logo p {
+      font-size: 0.85rem;
+      color: #666;
+      margin-top: 4px;
+    }
+
+    label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #444;
+      margin-bottom: 6px;
+    }
+
+    input[type="password"] {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1.5px solid #ddd;
+      border-radius: 10px;
+      font-size: 1rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    input[type="password"]:focus { border-color: #25D366; }
+
+    button {
+      width: 100%;
+      padding: 13px;
+      background: #25D366;
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 20px;
+      transition: background 0.2s;
+    }
+    button:hover { background: #1ebe5d; }
+    button:disabled { background: #a8e6c0; cursor: not-allowed; }
+
+    .error {
+      background: #fff0f0;
+      border: 1px solid #ffcdd2;
+      color: #c62828;
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 0.85rem;
+      margin-top: 14px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">
+      <div class="icon">🛍️</div>
+      <h1>Ofertas Maternidade</h1>
+      <p>Painel administrativo</p>
+    </div>
+
+    <label for="password">Senha</label>
+    <input type="password" id="password" placeholder="Digite a senha" autofocus />
+
+    <button id="btn" onclick="login()">Entrar</button>
+
+    <div class="error" id="error">Senha incorreta. Tente novamente.</div>
+  </div>
+
+  <script>
+    document.getElementById('password').addEventListener('keydown', e => {
+      if (e.key === 'Enter') login()
+    })
+
+    async function login() {
+      const password = document.getElementById('password').value
+      const btn = document.getElementById('btn')
+      const error = document.getElementById('error')
+
+      if (!password) return
+
+      btn.disabled = true
+      btn.textContent = 'Entrando...'
+      error.style.display = 'none'
+
+      try {
+        const res = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password }),
+        })
+
+        if (res.ok) {
+          window.location.href = '/'
+        } else {
+          error.style.display = 'block'
+          btn.disabled = false
+          btn.textContent = 'Entrar'
+          document.getElementById('password').value = ''
+          document.getElementById('password').focus()
+        }
+      } catch {
+        error.textContent = 'Erro de conexão. Tente novamente.'
+        error.style.display = 'block'
+        btn.disabled = false
+        btn.textContent = 'Entrar'
+      }
+    }
+  </script>
+</body>
+</html>

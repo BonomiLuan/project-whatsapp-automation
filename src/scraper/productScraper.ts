@@ -39,11 +39,25 @@ export async function scrapeProduct(url: string): Promise<ProductData> {
         const t = s.textContent || ''
         if (!t.includes('"title"') || !t.includes('"image"')) continue
         const titleMatch = t.match(/"title"\s*:\s*"([^"]{5,200})"/)
-        const imageMatch = t.match(/"image"\s*:\s*"(sg-[^"]+)"/)
         const discountMatch = t.match(/"show_discount"\s*:\s*(\d+)/)
         if (titleMatch) ssrName = titleMatch[1]
-        if (imageMatch) ssrImage = `https://down-br.img.susercontent.com/file/${imageMatch[1]}`
         if (discountMatch) ssrDiscount = discountMatch[1]
+
+        // Prefer "images" array (real product photos) over single "image" field
+        // which may point to a video thumbnail
+        if (!ssrImage) {
+          const arrMatch = t.match(/"images"\s*:\s*\[([^\]]{10,})\]/)
+          if (arrMatch) {
+            const hashes = [...arrMatch[1].matchAll(/"([a-z]{2}-[^"]{10,})"/g)].map(m => m[1])
+            if (hashes.length > 0) ssrImage = `https://down-br.img.susercontent.com/file/${hashes[0]}`
+          }
+        }
+        // Fallback: first standalone "image" field
+        if (!ssrImage) {
+          const imageMatch = t.match(/"image"\s*:\s*"([a-z]{2}-[^"]{10,})"/)
+          if (imageMatch) ssrImage = `https://down-br.img.susercontent.com/file/${imageMatch[1]}`
+        }
+
         if (ssrName && ssrImage) break
       }
 

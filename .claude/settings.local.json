@@ -10,7 +10,10 @@
       "Bash(npm install *)",
       "Bash(npx playwright *)",
       "Bash(npx tsc *)",
-      "Bash(npx tsx *)"
+      "Bash(npx tsx *)",
+      "Bash(python3 -c \"import sys; data=sys.stdin.read\\(\\); print\\(repr\\(data[:500]\\)\\)\")",
+      "Bash(python3 *)",
+      "WebSearch"
     ],
     "additionalDirectories": [
       "/Users/bonomiluan/repository/api-whatsapp"
