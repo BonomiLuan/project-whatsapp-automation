@@ -257,7 +257,21 @@ export function createBot() {
   const HELP_TEXT = [
     '👋 <b>Comandos disponíveis:</b>',
     '',
-    '/ofertas — ver todas as ofertas do site (Maternidade + Casa)',
+    '/ofertas — ver ofertas de todos os nichos',
+    '',
+    '<b>Por sub-nicho (3–5 produtos):</b>',
+    '/higiene — 🧴 Fraldas, lenço, pomada',
+    '/banho — 🛁 Toalha papi, sabonete, shampoo',
+    '/alimentacao — 🍼 Mamadeiras, chupetas',
+    '/enxoval — 👶 Enxoval, body, manta',
+    '/mobilidade — 🚗 Carrinhos, bebê conforto',
+    '/quarto — 🛏️ Berço, decoração, monitor',
+    '/brinquedos — 🧸 Brinquedos educativos',
+    '/saude — 💊 Termômetro, aspirador nasal',
+    '/maternidade — 🤱 Mala maternidade, amamentação',
+    '/limpeza — 🧹 OMO, Ariel, Lysol, Veja',
+    '/casa — 🏠 Panelas, organização, tapetes',
+    '',
     '/atualizar — buscar novas ofertas agora',
     '/ajuda — mostrar esta mensagem',
     '',
@@ -283,34 +297,47 @@ export function createBot() {
     }
   })
 
+  // Reusable: send up to `limit` random deals from a category
+  async function sendCategoryDeals(ctx: Ctx, category: DealCategory, limit = 5) {
+    const { getCachedDeals } = await import('../server/index.js')
+    const deals = getCachedDeals()
+    const pool = deals.filter(d => d.category === category)
+
+    if (!pool.length) {
+      await ctx.reply('🔍 Nenhuma oferta nessa categoria no momento. Tente /atualizar.')
+      return
+    }
+
+    const sample = pool.sort(() => Math.random() - 0.5).slice(0, limit)
+    const meta = CATEGORY_META[category]
+    await ctx.reply(`${meta.emoji} <b>${meta.label} — ${sample.length} ofertas</b>`, { parse_mode: 'HTML' })
+    for (const deal of sample) {
+      await sendDealCard(ctx, deal)
+      await new Promise(r => setTimeout(r, 300))
+    }
+  }
+
   bot.command('ofertas', async (ctx) => {
     const { getCachedDeals } = await import('../server/index.js')
     const deals = getCachedDeals()
-
     if (!deals.length) {
       await ctx.reply('🔍 Nenhuma oferta no momento. Tente /atualizar.')
       return
     }
-
-    const maternidade = deals.filter(d => d.category === 'maternidade')
-    const casa = deals.filter(d => d.category === 'casa')
-
-    if (maternidade.length) {
-      await ctx.reply(`🍼 <b>Maternidade — ${maternidade.length} ofertas</b>`, { parse_mode: 'HTML' })
-      for (const deal of maternidade) {
-        await sendDealCard(ctx, deal)
-        await new Promise(r => setTimeout(r, 300))
-      }
-    }
-
-    if (casa.length) {
-      await ctx.reply(`🏠 <b>Casa — ${casa.length} ofertas</b>`, { parse_mode: 'HTML' })
-      for (const deal of casa) {
-        await sendDealCard(ctx, deal)
-        await new Promise(r => setTimeout(r, 300))
-      }
+    const categories = [...new Set(deals.map(d => d.category))] as DealCategory[]
+    for (const cat of categories) {
+      await sendCategoryDeals(ctx, cat, 3)
     }
   })
+
+  // One command per sub-niche
+  const categoryCommands: DealCategory[] = [
+    'higiene', 'alimentacao', 'enxoval', 'mobilidade', 'quarto',
+    'brinquedos', 'saude', 'maternidade', 'casa', 'limpeza', 'banho',
+  ]
+  for (const cat of categoryCommands) {
+    bot.command(cat, (ctx) => sendCategoryDeals(ctx, cat))
+  }
 
   bot.hears(/https?:\/\//, (ctx) => ctx.scene.enter('offer'))
 
@@ -318,7 +345,18 @@ export function createBot() {
   telegramApi = bot.telegram
 
   bot.telegram.setMyCommands([
-    { command: 'ofertas', description: 'Ver ofertas do site (Maternidade + Casa)' },
+    { command: 'ofertas', description: 'Ver ofertas de todos os nichos' },
+    { command: 'higiene', description: `${CATEGORY_META.higiene.emoji} Fraldas, lenço, pomada` },
+    { command: 'banho', description: `${CATEGORY_META.banho.emoji} Toalha papi, sabonete, shampoo bebê` },
+    { command: 'alimentacao', description: `${CATEGORY_META.alimentacao.emoji} Mamadeiras, chupetas, cadeirinha` },
+    { command: 'enxoval', description: `${CATEGORY_META.enxoval.emoji} Enxoval, body, manta` },
+    { command: 'mobilidade', description: `${CATEGORY_META.mobilidade.emoji} Carrinhos, bebê conforto` },
+    { command: 'quarto', description: `${CATEGORY_META.quarto.emoji} Berço, decoração, monitor` },
+    { command: 'brinquedos', description: `${CATEGORY_META.brinquedos.emoji} Brinquedos educativos` },
+    { command: 'saude', description: `${CATEGORY_META.saude.emoji} Termômetro, aspirador nasal` },
+    { command: 'maternidade', description: `${CATEGORY_META.maternidade.emoji} Mala maternidade, amamentação` },
+    { command: 'limpeza', description: `${CATEGORY_META.limpeza.emoji} OMO, Ariel, Lysol, Veja` },
+    { command: 'casa', description: `${CATEGORY_META.casa.emoji} Panelas, organização, tapetes` },
     { command: 'atualizar', description: 'Buscar novas ofertas agora' },
     { command: 'ajuda', description: 'Ver todos os comandos' },
   ])
