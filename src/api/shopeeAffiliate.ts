@@ -226,7 +226,7 @@ export interface SubIds {
 }
 
 function toSubIdArray(s: SubIds): string[] {
-  const date = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+  const date = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('')
   return [s.source, s.trigger, s.category, s.slot, date]
 }
 

@@ -298,13 +298,13 @@ app.get('/api/image-proxy', async (req, res) => {
 const sentToday = new Set<string>()
 let roundRobinIndex = 0
 
-// Reset sent list at midnight
+// Reset sent list at midnight Brasília time
 cron.schedule('0 0 * * *', () => {
   sentToday.clear()
   sentTodayLog = []
   roundRobinIndex = 0
   console.log('[cron] Reset de ofertas enviadas')
-})
+}, { timezone: 'America/Sao_Paulo' })
 
 // Fixed rotation list — always cycles through ALL categories in order
 const ALL_CATEGORIES = Object.keys(CATEGORY_META) as DealCategory[]
@@ -336,7 +336,7 @@ async function sendNextSuggestion() {
   try {
     await sendDealToChat(deal)
     sentToday.add(deal.id)
-    sentTodayLog.push({ ...deal, sentAt: new Date().toISOString() })
+    sentTodayLog.push({ ...deal, sentAt: new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) })
     dealsCache = dealsCache.filter(d => d.id !== deal!.id)
     console.log(`[suggest] ✓ ${deal.category} — ${deal.title.slice(0, 40)}`)
   } catch (err) {
@@ -348,6 +348,6 @@ app.listen(PORT, () => {
   console.log(`\n✅ Servidor rodando em http://localhost:${PORT}`)
   createBot()
   refreshDeals()
-  cron.schedule('*/30 * * * *', refreshDeals)
-  cron.schedule('*/15 7-22 * * *', sendNextSuggestion)
+  cron.schedule('*/30 * * * *', refreshDeals, { timezone: 'America/Sao_Paulo' })
+  cron.schedule('*/15 7-22 * * *', sendNextSuggestion, { timezone: 'America/Sao_Paulo' })
 })

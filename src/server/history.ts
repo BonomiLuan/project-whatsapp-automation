@@ -27,7 +27,7 @@ export function appendHistory(entry: Omit<HistoryEntry, 'id' | 'sentAt'>): Histo
   const history = loadHistory()
   const newEntry: HistoryEntry = {
     id: Date.now().toString(),
-    sentAt: new Date().toISOString(),
+    sentAt: new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
     ...entry,
   }
   history.unshift(newEntry)
