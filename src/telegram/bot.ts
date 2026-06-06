@@ -341,14 +341,16 @@ export function createBot() {
 
   // WhatsApp callback: send deal card directly via Meta API
   bot.action(/^wa:(.+)$/, async (ctx) => {
-    await ctx.answerCbQuery('⏳ Enviando para o WhatsApp...')
+    await ctx.answerCbQuery()
     const dealId = ctx.match[1]
     const deal = dealCardStore.get(dealId)
 
     if (!deal) {
-      await ctx.answerCbQuery('❌ Oferta não encontrada. Tente reabrir o card.')
+      await ctx.reply('❌ Oferta não encontrada no cache. Tente buscar novamente com /ofertas.')
       return
     }
+
+    const status = await ctx.reply('⏳ Enviando para o WhatsApp...')
 
     try {
       const groupUrl = process.env.WHATSAPP_GROUP_URL || ''
@@ -364,11 +366,21 @@ export function createBot() {
         imageUrl: deal.imageUrl,
       }
 
+      console.log(`[wa-button] Enviando para WhatsApp: ${deal.title.slice(0, 40)}`)
       await sendOfferMessage(payload)
-      await ctx.answerCbQuery('✅ Enviado para o WhatsApp!')
+      console.log(`[wa-button] ✓ Enviado com sucesso`)
+
+      await ctx.telegram.editMessageText(
+        ctx.chat!.id, status.message_id, undefined,
+        `✅ Enviado para o WhatsApp!\n📦 ${deal.title.slice(0, 50)}`
+      )
     } catch (err) {
-      const msg = err instanceof Error ? err.message.slice(0, 100) : 'Erro desconhecido'
-      await ctx.answerCbQuery(`❌ ${msg}`)
+      const msg = err instanceof Error ? err.message : 'Erro desconhecido'
+      console.error(`[wa-button] ✗ Erro:`, msg)
+      await ctx.telegram.editMessageText(
+        ctx.chat!.id, status.message_id, undefined,
+        `❌ Falha ao enviar para o WhatsApp:\n\`${msg.slice(0, 200)}\``
+      )
     }
   })
 
