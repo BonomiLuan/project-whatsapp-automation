@@ -339,6 +339,39 @@ export function createBot() {
     bot.command(cat, (ctx) => sendCategoryDeals(ctx, cat))
   }
 
+  // WhatsApp callback: send deal card directly via Meta API
+  bot.action(/^wa:(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery('⏳ Enviando para o WhatsApp...')
+    const dealId = ctx.match[1]
+    const deal = dealCardStore.get(dealId)
+
+    if (!deal) {
+      await ctx.answerCbQuery('❌ Oferta não encontrada. Tente reabrir o card.')
+      return
+    }
+
+    try {
+      const groupUrl = process.env.WHATSAPP_GROUP_URL || ''
+      const orig = deal.originalPrice ?? ''
+      const priceFormatted = orig ? `~${orig}~ ${deal.price}` : deal.price
+
+      const payload: import('../content/messageBuilder.js').MessagePayload = {
+        name: deal.title.slice(0, 60),
+        price: priceFormatted,
+        coupon: ' ',
+        affiliateUrl: deal.affiliateUrl,
+        groupUrl,
+        imageUrl: deal.imageUrl,
+      }
+
+      await sendOfferMessage(payload)
+      await ctx.answerCbQuery('✅ Enviado para o WhatsApp!')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message.slice(0, 100) : 'Erro desconhecido'
+      await ctx.answerCbQuery(`❌ ${msg}`)
+    }
+  })
+
   bot.hears(/https?:\/\//, (ctx) => ctx.scene.enter('offer'))
 
   bot.launch()
@@ -403,16 +436,23 @@ export async function sendDealToChat(deal: UnifiedDeal): Promise<void> {
     groupUrl,
   })
 
+  dealCardStore.set(deal.id, { ...deal, affiliateUrl: dealUrl })
+
+  const waButton = Markup.inlineKeyboard([[
+    Markup.button.url('🛒 Abrir oferta', dealUrl),
+    Markup.button.callback('📲 WhatsApp', `wa:${deal.id}`),
+  ]])
+
   for (let i = 0; i < chatIds.length; i++) {
     if (i > 0) await new Promise(r => setTimeout(r, 60_000))
     const id = chatIds[i]
     if (deal.imageUrl) {
       try {
-        await telegramApi!.sendPhoto(id, deal.imageUrl, { caption: text })
+        await telegramApi!.sendPhoto(id, deal.imageUrl, { caption: text, ...waButton })
         continue
       } catch { /* fallback to text */ }
     }
-    await telegramApi!.sendMessage(id, text)
+    await telegramApi!.sendMessage(id, text, waButton)
   }
 }
 
@@ -439,6 +479,9 @@ export async function sendProductToChat(
   }
 }
 
+// Stores deals shown in cards so the WhatsApp callback can find them
+const dealCardStore = new Map<string, UnifiedDeal>()
+
 async function sendDealCard(ctx: Ctx, deal: UnifiedDeal) {
   const isShopee = deal.source === 'shopee'
 
@@ -454,6 +497,8 @@ async function sendDealCard(ctx: Ctx, deal: UnifiedDeal) {
     } catch { /* fallback to pre-generated link */ }
   }
 
+  dealCardStore.set(deal.id, { ...deal, affiliateUrl: dealUrl })
+
   const groupUrl = process.env.WHATSAPP_GROUP_URL || ''
   const categoryEmoji = CATEGORY_META[deal.category]?.emoji ?? '🛍️'
 
@@ -466,7 +511,10 @@ async function sendDealCard(ctx: Ctx, deal: UnifiedDeal) {
     groupUrl,
   })
 
-  const buttons = Markup.inlineKeyboard([[Markup.button.url('🛒 Abrir oferta', dealUrl)]])
+  const buttons = Markup.inlineKeyboard([[
+    Markup.button.url('🛒 Abrir oferta', dealUrl),
+    Markup.button.callback('📲 WhatsApp', `wa:${deal.id}`),
+  ]])
 
   try {
     if (deal.imageUrl) {
