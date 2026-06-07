@@ -30,7 +30,7 @@ async function gql<T>(query: string, variables?: Record<string, unknown>): Promi
 export type DealCategory =
   | 'higiene' | 'alimentacao' | 'enxoval' | 'mobilidade'
   | 'quarto' | 'brinquedos' | 'saude' | 'maternidade'
-  | 'casa' | 'limpeza' | 'banho' | 'geral'
+  | 'casa' | 'limpeza' | 'banho' | 'fraldas' | 'geral'
 
 export interface ShopeeProduct {
   itemId: number
@@ -63,6 +63,7 @@ export const CATEGORY_META: Record<DealCategory, { emoji: string; label: string 
   casa:        { emoji: '🏠', label: 'Casa' },
   limpeza:     { emoji: '🧹', label: 'Limpeza' },
   banho:       { emoji: '🛁', label: 'Banho Bebê' },
+  fraldas:     { emoji: '🍼', label: 'Fraldas' },
   geral:       { emoji: '🛍️', label: 'Geral' },
 }
 
@@ -109,6 +110,14 @@ const CATEGORY_KEYWORDS: Partial<Record<DealCategory, string[]>> = {
     'condicionador infantil', 'hidratante mustela bebê', 'creme hidratante bebê',
     'banheira bebê', 'banheira dobrável bebê', 'suporte banheira bebê',
     'esponja banho bebê', 'termômetro banheira bebê',
+  ],
+  fraldas: [
+    'fralda pampers premium care', 'fralda pampers pants', 'fralda pampers confort sec',
+    'fralda huggies supreme', 'fralda huggies roupinha', 'fralda huggies pants',
+    'fralda pants pull up', 'fralda calça bebê', 'fralda pants noturna',
+    'fralda de piscina bebê', 'fralda piscina huggies little swimmers',
+    'fralda premium bebê', 'fralda ultrafina premium', 'fralda mamypoko pants',
+    'kit fralda pampers rn', 'fralda babysec premium', 'fralda turma da monica',
   ],
   limpeza: [
     'sabão em pó omo', 'sabão em pó ariel', 'sabão em pó brilhante', 'sabão em pó ypê',
