@@ -1,5 +1,6 @@
 import { chromium } from 'playwright-extra'
 import StealthPlugin from 'puppeteer-extra-plugin-stealth'
+import { injectAmazonTag } from '../api/amazonAffiliate.js'
 
 chromium.use(StealthPlugin())
 
@@ -22,9 +23,7 @@ const CATEGORIES = [
 
 const MIN_TEMPERATURE = 20
 
-// Stores to include. Add 'amazon', 'mercado-livre' when you get those affiliate programs.
-// Empty = show all stores (recommended until Shopee Affiliate API is available).
-const ALLOWED_STORES: string[] = []
+const ALLOWED_STORES: string[] = ['amazon']
 
 export async function fetchDeals(): Promise<PelandoDeal[]> {
   const browser = await chromium.launch({ headless: true })
@@ -97,12 +96,16 @@ export async function fetchDeals(): Promise<PelandoDeal[]> {
 
           seen.add(item.dealUrl)
 
+          const dealUrl = item.store.toLowerCase().includes('amazon')
+            ? injectAmazonTag(item.dealUrl)
+            : item.dealUrl
+
           allDeals.push({
             id: item.dealUrl,
             title: item.title.slice(0, 80),
             price: formatPrice(item.price),
             store: item.store,
-            dealUrl: item.dealUrl,
+            dealUrl,
             imageUrl: item.imageUrl,
             temperature: item.temperature,
             publishedAt: now,

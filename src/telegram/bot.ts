@@ -6,6 +6,7 @@ import { scrapeProduct, type ProductData } from '../scraper/productScraper.js'
 import { buildMessagePayload, fmt } from '../content/messageBuilder.js'
 import { sendOfferMessage } from '../api/metaClient.js'
 import { generateAffiliateLink, fetchShopeeProductByUrl, CATEGORY_META, type SubIds, type DealCategory } from '../api/shopeeAffiliate.js'
+import { injectAmazonTag, isAmazonUrl } from '../api/amazonAffiliate.js'
 import { type UnifiedDeal } from '../server/index.js'
 
 import type { Telegram } from 'telegraf'
@@ -165,6 +166,7 @@ const offerWizard = new Scenes.WizardScene<Ctx>(
 
     const status = await ctx.reply('🔍 Processando produto...')
     const isShopee = text.includes('shopee.com.br') || text.includes('s.shopee.com.br')
+    const isAmazon = isAmazonUrl(text)
 
     try {
       // Auto-generate affiliate link + fetch product info from Shopee API in parallel
@@ -183,6 +185,12 @@ const offerWizard = new Scenes.WizardScene<Ctx>(
           ctx.chat!.id, status.message_id, undefined,
           `🔗 Link de afiliado gerado!\n\n⏳ Extraindo dados do produto...`,
         )
+      } else if (isAmazon) {
+        affiliateUrl = injectAmazonTag(text)
+        await ctx.telegram.editMessageText(
+          ctx.chat!.id, status.message_id, undefined,
+          `🔗 Tag Amazon adicionada!\n\n⏳ Extraindo dados do produto...`,
+        )
       }
 
       const product = await scrapeProduct(text)
@@ -195,7 +203,7 @@ const offerWizard = new Scenes.WizardScene<Ctx>(
 
       ctx.wizard.state.product = product
 
-      const affiliateNote = isShopee ? '\n🔗 Link de afiliado: gerado ✅' : ''
+      const affiliateNote = isShopee || isAmazon ? '\n🔗 Link de afiliado: gerado ✅' : ''
       await ctx.telegram.editMessageText(
         ctx.chat!.id, status.message_id, undefined,
         `📦 <b>${esc(product.name)}</b>${product.imageUrl ? '\n🖼️ Imagem encontrada' : ''}${affiliateNote}`,
