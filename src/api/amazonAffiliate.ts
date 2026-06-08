@@ -1,4 +1,4 @@
-const ASSOCIATE_TAG = 'thaisbonomi-20'
+const ASSOCIATE_TAG = process.env.AMAZON_ASSOCIATE_TAG ?? 'thaisbonomi-20'
 
 function extractAsin(url: string): string | null {
   const match = url.match(/\/(?:dp|gp\/product|exec\/obidos\/ASIN)\/([A-Z0-9]{10})/i)
