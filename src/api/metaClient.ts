@@ -25,10 +25,10 @@ export async function sendOfferMessage(payload: MessagePayload): Promise<string>
         name: templateName,
         language: { code: 'pt_BR' },
         components: [
-          {
+          ...(payload.imageUrl ? [{
             type: 'header',
             parameters: [{ type: 'image', image: { link: payload.imageUrl } }],
-          },
+          }] : []),
           {
             type: 'body',
             parameters: [
