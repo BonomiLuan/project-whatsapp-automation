@@ -202,20 +202,31 @@ const offerWizard = new Scenes.WizardScene<Ctx>(
         )
       }
 
-      // Amazon: tenta fetch leve (OG tags via axios) antes de abrir o Playwright
+      // Montar produto com melhor fonte disponível
       let product: ProductData
       if (isAmazon) {
+        // Amazon: fetch leve (OG tags) antes de abrir o Playwright
         const quick = await quickFetchProduct(scrapeUrl)
         product = quick ?? await scrapeProduct(scrapeUrl)
+      } else if (isShopee && shopeeApiInfo?.name && shopeeApiInfo?.imageUrl) {
+        // Shopee: API retornou nome + imagem — usa direto, sem Playwright
+        const rawName = shopeeApiInfo.name.trim()
+        product = {
+          name: rawName.length > 60 ? rawName.slice(0, 57) + '...' : rawName,
+          price: fmt(shopeeApiInfo.price),
+          imageUrl: shopeeApiInfo.imageUrl,
+          originalUrl: affiliateUrl,
+        }
       } else {
+        // Fallback: Playwright (Shopee sem API ou outros sites)
         product = await scrapeProduct(scrapeUrl)
+        // Preenche lacunas com dados da API Shopee se disponíveis
+        if (shopeeApiInfo) {
+          if (!product.price) product.price = fmt(shopeeApiInfo.price)
+          if (!product.imageUrl) product.imageUrl = shopeeApiInfo.imageUrl
+        }
       }
       product.originalUrl = affiliateUrl
-
-      // Use API price if scraper didn't find one
-      if (!product.price && shopeeApiInfo?.price) {
-        product.price = fmt(shopeeApiInfo.price)
-      }
 
       ctx.wizard.state.product = product
 

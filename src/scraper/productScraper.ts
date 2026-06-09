@@ -37,18 +37,29 @@ export async function quickFetchProduct(url: string): Promise<ProductData | null
     })
 
     const html = res.data as string
-    const rawName = decodeHtmlEntities(extractOgTag(html, 'og:title'))
-    const imageUrl = extractOgTag(html, 'og:image')
+
+    // OG tags (Shopee, genérico) → fallback para <title> (Amazon não tem OG)
+    const rawName = decodeHtmlEntities(
+      extractOgTag(html, 'og:title') ||
+      html.match(/<title[^>]*>([^<|]+)/i)?.[1]?.trim() ||
+      ''
+    )
+
+    // OG image → Amazon hiRes/data-old-hires JSON embeds
+    const imageUrl =
+      extractOgTag(html, 'og:image') ||
+      html.match(/"hiRes"\s*:\s*"(https:[^"]+)"/)?.[1] ||
+      html.match(/data-old-hires="(https:[^"]+)"/)?.[1] ||
+      ''
 
     if (!rawName || !imageUrl) return null
 
     const name = rawName.length > 60 ? rawName.slice(0, 57) + '...' : rawName
 
-    // Best-effort price from Amazon JSON embeds
-    const priceMatch =
-      html.match(/"priceAmount"\s*:\s*"([\d.,]+)"/) ??
-      html.match(/"price"\s*:\s*"R\$\s*([\d.,]+)"/)
-    const price = priceMatch ? formatRawPrice(priceMatch[1]) : ''
+    // "displayPrice" já vem formatado "R$ 173,85"; fallback para "priceAmount"
+    const displayPrice = html.match(/"displayPrice"\s*:\s*"([^"]+)"/)?.[1]?.trim()
+    const priceAmount = html.match(/"priceAmount"\s*:\s*"?([\d.,]+)"?/)?.[1]
+    const price = displayPrice ?? (priceAmount ? formatRawPrice(priceAmount) : '')
 
     return { name, price, imageUrl, originalUrl: url }
   } catch {
