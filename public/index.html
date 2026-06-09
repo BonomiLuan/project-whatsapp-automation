@@ -216,12 +216,23 @@
   <!-- Shopee Deals -->
   <div class="card">
     <div class="deals-header">
-      <h2>🛍️ Ofertas</h2>
+      <h2>🛍️ Ofertas Shopee</h2>
       <button class="btn-refresh" id="btnRefreshDeals">↻ Atualizar</button>
     </div>
     <p class="deals-hint">🟢 Link de afiliado gerado automaticamente — só clicar em "Usar oferta".</p>
     <div class="tabs-bar" id="tabsBar"></div>
     <ul class="history-list" id="dealsList" style="margin-top:12px">
+      <li class="empty">Carregando...</li>
+    </ul>
+  </div>
+
+  <!-- Amazon Deals -->
+  <div class="card">
+    <div class="deals-header">
+      <h2>🟠 Ofertas Amazon</h2>
+    </div>
+    <p class="deals-hint" style="border-left-color:#ff9900;background:#fff8f0">🔗 Link de afiliado com sua tag — via promoções do Pelando.</p>
+    <ul class="history-list" id="amazonList" style="margin-top:12px">
       <li class="empty">Carregando...</li>
     </ul>
   </div>
@@ -263,31 +274,57 @@
   async function loadDeals() {
     console.log('[loadDeals] iniciando...')
     try {
-      console.log('[loadDeals] buscando /api/deals e /api/categories...')
       const [dealsRes, catRes] = await Promise.all([fetch('/api/deals'), fetch('/api/categories')])
-      console.log('[loadDeals] status deals:', dealsRes.status, '| status categories:', catRes.status)
+      if (!dealsRes.ok) throw new Error(`/api/deals retornou ${dealsRes.status}`)
+      if (!catRes.ok) throw new Error(`/api/categories retornou ${catRes.status}`)
 
-      if (!dealsRes.ok) {
-        console.error('[loadDeals] /api/deals retornou erro HTTP', dealsRes.status)
-        throw new Error(`/api/deals retornou ${dealsRes.status}`)
-      }
-      if (!catRes.ok) {
-        console.error('[loadDeals] /api/categories retornou erro HTTP', catRes.status)
-        throw new Error(`/api/categories retornou ${catRes.status}`)
-      }
-
-      allDeals = await dealsRes.json()
+      const deals = await dealsRes.json()
       categoryMeta = await catRes.json()
-      console.log('[loadDeals] deals recebidos:', allDeals.length, '| categorias:', Object.keys(categoryMeta).length)
-      console.log('[loadDeals] categorias disponíveis:', Object.keys(categoryMeta))
-      if (allDeals.length > 0) {
-        console.log('[loadDeals] exemplo de deal:', JSON.stringify(allDeals[0]).slice(0, 120))
-      }
+
+      allDeals = deals.filter(d => d.source === 'shopee')
+      const amazonDeals = deals.filter(d => d.source === 'amazon')
+
+      console.log('[loadDeals] shopee:', allDeals.length, '| amazon:', amazonDeals.length)
       renderTabs()
+      renderAmazon(amazonDeals)
     } catch (err) {
       console.error('[loadDeals] ERRO:', err)
       $('dealsList').innerHTML = `<li class="empty">Erro ao carregar ofertas: ${err.message}</li>`
+      $('amazonList').innerHTML = `<li class="empty">Erro ao carregar ofertas Amazon.</li>`
     }
+  }
+
+  function renderAmazon(deals) {
+    const list = $('amazonList')
+    if (!deals.length) { list.innerHTML = '<li class="empty">Nenhuma oferta Amazon encontrada.</li>'; return }
+    list.innerHTML = deals.map(deal => {
+      const data = encodeURIComponent(JSON.stringify({
+        productLink: deal.affiliateUrl,
+        affiliateUrl: deal.affiliateUrl,
+        price: deal.price || '',
+        originalPrice: '',
+        title: deal.title,
+        imageUrl: deal.imageUrl,
+        category: deal.category,
+        source: deal.source,
+      }))
+      return `
+        <li class="deal-item">
+          <img class="deal-thumb" src="${deal.imageUrl || ''}" alt=""
+            onerror="this.style.background='#f0f0f0';this.style.display='block'" />
+          <div class="deal-info">
+            <div class="deal-title">${deal.title}</div>
+            <div class="deal-meta">
+              ${deal.price ? `<span class="deal-price">${deal.price}</span>` : ''}
+              ${deal.discountPercent > 0 ? `<span class="deal-store" style="background:#fff4e0;color:#cc6600">🔥 ${deal.discountPercent}°</span>` : ''}
+              <span class="deal-store" style="background:#fff4e0;color:#cc6600">Amazon</span>
+            </div>
+            <button class="btn-use-deal" style="border-color:#ff9900;color:#ff9900" onclick="useDeal('${data}')">
+              ✅ Usar oferta (link pronto)
+            </button>
+          </div>
+        </li>`
+    }).join('')
   }
 
   // Load deals and history on page open

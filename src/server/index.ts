@@ -82,7 +82,7 @@ export interface UnifiedDeal {
   imageUrl: string
   affiliateUrl: string   // ready-to-use affiliate link
   productLink?: string   // canonical Shopee URL — use as originUrl when generating links with subIds
-  source: 'shopee' | 'pelando'
+  source: 'shopee' | 'amazon'
   category: DealCategory
   publishedAt: string
 }
@@ -126,28 +126,26 @@ export async function refreshDeals() {
     }
   }
 
-  // Fallback: Pelando (if Shopee returned nothing)
-  if (results.length === 0) {
-    try {
-      const pelandoDeals = await fetchPelandoDeals()
-      for (const d of pelandoDeals) {
-        results.push({
-          id: d.id,
-          title: d.title,
-          price: d.price,
-          discountPercent: d.temperature,
-          store: d.store,
-          imageUrl: d.imageUrl,
-          affiliateUrl: d.dealUrl,
-          source: 'pelando',
-          category: 'geral',
-          publishedAt: d.publishedAt,
-        })
-      }
-      console.log(`[pelando] ✓ ${pelandoDeals.length} deals (fallback)`)
-    } catch (err) {
-      console.error('[pelando] Erro:', err instanceof Error ? err.message : err)
+  // Amazon via Pelando (always runs in parallel with Shopee)
+  try {
+    const pelandoDeals = await fetchPelandoDeals()
+    for (const d of pelandoDeals) {
+      results.push({
+        id: d.id,
+        title: d.title,
+        price: d.price,
+        discountPercent: d.temperature,
+        store: d.store,
+        imageUrl: d.imageUrl,
+        affiliateUrl: d.dealUrl,
+        source: 'amazon',
+        category: 'geral',
+        publishedAt: d.publishedAt,
+      })
     }
+    console.log(`[amazon] ✓ ${pelandoDeals.length} deals via Pelando`)
+  } catch (err) {
+    console.error('[amazon] Erro:', err instanceof Error ? err.message : err)
   }
 
   dealsCache = results
