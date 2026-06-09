@@ -1,3 +1,5 @@
+import axios from 'axios'
+
 const ASSOCIATE_TAG = process.env.AMAZON_ASSOCIATE_TAG ?? 'thaisbonomi-20'
 
 function extractAsin(url: string): string | null {
@@ -5,14 +7,30 @@ function extractAsin(url: string): string | null {
   return match ? match[1].toUpperCase() : null
 }
 
-export function injectAmazonTag(url: string): string {
+async function expandShortLink(url: string): Promise<string> {
   try {
-    const asin = extractAsin(url)
+    const res = await axios.get(url, {
+      maxRedirects: 5,
+      timeout: 8000,
+      validateStatus: () => true,
+    })
+    return (res.request as { res?: { responseUrl?: string } }).res?.responseUrl ?? url
+  } catch {
+    return url
+  }
+}
+
+export async function injectAmazonTag(url: string): Promise<string> {
+  try {
+    let resolved = url
+    if (url.includes('a.co') || url.includes('amzn.to')) {
+      resolved = await expandShortLink(url)
+    }
+    const asin = extractAsin(resolved)
     if (asin) {
       return `https://www.amazon.com.br/dp/${asin}?tag=${ASSOCIATE_TAG}`
     }
-    // Fallback: keep original URL, just add/replace tag
-    const parsed = new URL(url)
+    const parsed = new URL(resolved)
     parsed.searchParams.set('tag', ASSOCIATE_TAG)
     return parsed.toString()
   } catch {
@@ -21,5 +39,5 @@ export function injectAmazonTag(url: string): string {
 }
 
 export function isAmazonUrl(url: string): boolean {
-  return url.includes('amazon.com.br') || url.includes('amzn.to')
+  return url.includes('amazon.com.br') || url.includes('amzn.to') || url.includes('a.co')
 }

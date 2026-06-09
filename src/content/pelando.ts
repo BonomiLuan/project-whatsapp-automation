@@ -97,7 +97,7 @@ export async function fetchDeals(): Promise<PelandoDeal[]> {
           seen.add(item.dealUrl)
 
           const dealUrl = item.store.toLowerCase().includes('amazon')
-            ? injectAmazonTag(item.dealUrl)
+            ? await injectAmazonTag(item.dealUrl)
             : item.dealUrl
 
           allDeals.push({

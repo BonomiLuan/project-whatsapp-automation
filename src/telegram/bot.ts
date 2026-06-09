@@ -186,7 +186,7 @@ const offerWizard = new Scenes.WizardScene<Ctx>(
           `🔗 Link de afiliado gerado!\n\n⏳ Extraindo dados do produto...`,
         )
       } else if (isAmazon) {
-        affiliateUrl = injectAmazonTag(text)
+        affiliateUrl = await injectAmazonTag(text)
         await ctx.telegram.editMessageText(
           ctx.chat!.id, status.message_id, undefined,
           `🔗 Tag Amazon adicionada!\n\n⏳ Extraindo dados do produto...`,
