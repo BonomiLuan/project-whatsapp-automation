@@ -2,10 +2,10 @@ import { Telegraf, Scenes, session, Markup } from 'telegraf'
 import type { WizardContext } from 'telegraf/scenes'
 import { createReadStream } from 'fs'
 import { resolve } from 'path'
-import { scrapeProduct, type ProductData } from '../scraper/productScraper.js'
+import { scrapeProduct, quickFetchProduct, type ProductData } from '../scraper/productScraper.js'
 import { buildMessagePayload, fmt } from '../content/messageBuilder.js'
 import { sendOfferMessage } from '../api/metaClient.js'
-import { generateAffiliateLink, fetchShopeeProductByUrl, CATEGORY_META, type SubIds, type DealCategory } from '../api/shopeeAffiliate.js'
+import { generateAffiliateLink, fetchShopeeProductByUrl, expandShortLink, CATEGORY_META, type SubIds, type DealCategory } from '../api/shopeeAffiliate.js'
 import { injectAmazonTag, isAmazonUrl } from '../api/amazonAffiliate.js'
 import { type UnifiedDeal } from '../server/index.js'
 
@@ -165,19 +165,27 @@ const offerWizard = new Scenes.WizardScene<Ctx>(
     }
 
     const status = await ctx.reply('🔍 Processando produto...')
-    const isShopee = text.includes('shopee.com.br') || text.includes('s.shopee.com.br')
+    const isShopee = text.includes('shopee.com.br') || text.includes('s.shopee.com.br') || text.includes('shp.ee')
     const isAmazon = isAmazonUrl(text)
 
     try {
       // Auto-generate affiliate link + fetch product info from Shopee API in parallel
       let affiliateUrl = text
+      let scrapeUrl = text
       let shopeeApiInfo: Awaited<ReturnType<typeof fetchShopeeProductByUrl>> = null
 
       if (isShopee) {
+        // Expand short links (br.shp.ee, s.shopee.com.br) to full URL before API calls
+        let shopeeUrl = text
+        if (text.includes('shp.ee') || text.includes('s.shopee.com.br')) {
+          shopeeUrl = await expandShortLink(text)
+        }
+        scrapeUrl = shopeeUrl
+
         const subIds: SubIds = { source: 'telegram', trigger: 'manual', category: 'geral', slot: 'none' }
         const [affiliateResult, apiResult] = await Promise.allSettled([
-          generateAffiliateLink(text, subIds),
-          fetchShopeeProductByUrl(text),
+          generateAffiliateLink(shopeeUrl, subIds),
+          fetchShopeeProductByUrl(shopeeUrl),
         ])
         if (affiliateResult.status === 'fulfilled') affiliateUrl = affiliateResult.value
         if (apiResult.status === 'fulfilled') shopeeApiInfo = apiResult.value
@@ -187,13 +195,21 @@ const offerWizard = new Scenes.WizardScene<Ctx>(
         )
       } else if (isAmazon) {
         affiliateUrl = await injectAmazonTag(text)
+        scrapeUrl = affiliateUrl  // use the expanded, clean Amazon URL for scraping
         await ctx.telegram.editMessageText(
           ctx.chat!.id, status.message_id, undefined,
           `🔗 Tag Amazon adicionada!\n\n⏳ Extraindo dados do produto...`,
         )
       }
 
-      const product = await scrapeProduct(text)
+      // Amazon: tenta fetch leve (OG tags via axios) antes de abrir o Playwright
+      let product: ProductData
+      if (isAmazon) {
+        const quick = await quickFetchProduct(scrapeUrl)
+        product = quick ?? await scrapeProduct(scrapeUrl)
+      } else {
+        product = await scrapeProduct(scrapeUrl)
+      }
       product.originalUrl = affiliateUrl
 
       // Use API price if scraper didn't find one

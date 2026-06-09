@@ -177,7 +177,7 @@ function parseShopeeItemId(url: string): number | null {
   return match ? parseInt(match[2]) : null
 }
 
-async function expandShortLink(url: string): Promise<string> {
+export async function expandShortLink(url: string): Promise<string> {
   try {
     const res = await axios.get(url, {
       maxRedirects: 5,
@@ -200,7 +200,7 @@ export interface ShopeeProductInfo {
 
 export async function fetchShopeeProductByUrl(url: string): Promise<ShopeeProductInfo | null> {
   let resolvedUrl = url
-  if (url.includes('s.shopee.com.br')) {
+  if (url.includes('s.shopee.com.br') || url.includes('shp.ee')) {
     resolvedUrl = await expandShortLink(url)
   }
 
