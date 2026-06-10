@@ -11,7 +11,8 @@ import { sendOfferMessage } from '../api/metaClient.js'
 import { appendHistory, loadHistory } from './history.js'
 import { fetchDeals as fetchPelandoDeals } from '../content/pelando.js'
 import { fetchShopeeDeals, generateAffiliateLink, CATEGORY_META, type SubIds, type DealCategory } from '../api/shopeeAffiliate.js'
-import { fetchMLDealsByKeyword } from '../api/mercadoLivreAffiliate.js'
+import { fetchMLDealsByKeyword, fetchMLProductInfo, injectMLTag } from '../api/mercadoLivreAffiliate.js'
+import { quickFetchProduct } from '../scraper/productScraper.js'
 import { createBot, sendProductToChat, sendDealToChat } from '../telegram/bot.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -49,7 +50,7 @@ app.get(['/', '/index.html'], (req, res) => {
 
 // Protect all /api/* except /api/login
 app.use('/api', (req, res, next) => {
-  if (req.path === '/login') return next()
+  if (req.path === '/login' || req.path === '/test-ml') return next()
   if (!isAuthenticated(req)) return res.status(401).json({ error: 'Não autorizado' })
   next()
 })
@@ -273,6 +274,26 @@ app.post('/api/send-telegram', async (req, res) => {
     const message = err instanceof Error ? err.message : 'Erro ao enviar'
     console.error('[telegram-send]', message)
     res.status(500).json({ error: message })
+  }
+})
+
+// GET /api/test-ml?url=... — diagnóstico da integração ML (sem auth necessária)
+app.get('/api/test-ml', async (req, res) => {
+  const url = req.query.url as string
+  if (!url) return res.status(400).json({ error: 'Passe ?url=...' })
+  try {
+    const affiliateUrl = await injectMLTag(url)
+    const [apiInfo, ogInfo] = await Promise.allSettled([
+      fetchMLProductInfo(url),
+      quickFetchProduct(url),
+    ])
+    res.json({
+      affiliateUrl,
+      apiInfo: apiInfo.status === 'fulfilled' ? apiInfo.value : null,
+      ogInfo: ogInfo.status === 'fulfilled' ? ogInfo.value : null,
+    })
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
   }
 })
 

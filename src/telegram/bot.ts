@@ -228,8 +228,16 @@ const offerWizard = new Scenes.WizardScene<Ctx>(
       // Montar produto com melhor fonte disponível
       let product: ProductData
       if (isML && ctx.wizard.state.product) {
-        // ML: API pública retornou dados — usa direto
+        // ML: API retornou dados — usa direto
         product = ctx.wizard.state.product
+      } else if (isML) {
+        // ML: API falhou — entrada manual (sem Playwright, que não funciona no ML)
+        await ctx.telegram.editMessageText(
+          ctx.chat!.id, status.message_id, undefined,
+          `🔗 Link ML com tag gerada!\n\n⚠️ Não consegui extrair dados automaticamente.\n\n💰 Digite o preço promocional:`,
+        )
+        ctx.wizard.state.product = { name: 'Produto Mercado Livre', price: '', imageUrl: '', originalUrl: affiliateUrl }
+        return ctx.wizard.next() // step 2: pede preço manualmente
       } else if (isAmazon) {
         // Amazon: fetch leve (OG tags) antes de abrir o Playwright
         const quick = await quickFetchProduct(scrapeUrl)
@@ -654,7 +662,9 @@ export function createBot() {
 
   bot.hears(/https?:\/\//, (ctx) => ctx.scene.enter('offer'))
 
-  bot.launch()
+  bot.launch().catch((err: Error) => {
+    console.error('[telegram] Falha no launch (bot desabilitado):', err.message)
+  })
   telegramApi = bot.telegram
 
   bot.telegram.setMyCommands([
