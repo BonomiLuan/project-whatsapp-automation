@@ -14,9 +14,14 @@ export interface MLProductInfo {
   permalink: string
 }
 
+// Matches both MLB123 (regular item) and MLBU123 (catalog/universal product)
 function extractMLProductId(url: string): string | null {
-  const match = url.match(/MLB\d+/i)
+  const match = url.match(/MLB[A-Z]?\d+/i)
   return match ? match[0].toUpperCase() : null
+}
+
+function isCatalogId(id: string): boolean {
+  return /^MLBU/i.test(id)
 }
 
 async function expandShortLink(url: string): Promise<string> {
@@ -62,6 +67,55 @@ export function isMercadoLivreUrl(url: string): boolean {
   )
 }
 
+function bestImageUrl(data: Record<string, unknown>): string {
+  // Prefer full-size picture from the pictures array
+  const pictures = data.pictures as { url?: string; secure_url?: string }[] | undefined
+  if (pictures?.length) {
+    const pic = pictures[0]
+    const raw = (pic.secure_url ?? pic.url ?? '') as string
+    return raw.replace('http://', 'https://')
+  }
+  // Fall back to thumbnail, upgrading from small (-I) to medium (-O)
+  const thumb = ((data.thumbnail as string) ?? '').replace('http://', 'https://')
+  return thumb.replace(/-I\.(jpg|webp)$/i, '-O.$1')
+}
+
+async function fetchFromItemsApi(itemId: string): Promise<MLProductInfo | null> {
+  const { data } = await axios.get(`${ML_API}/items/${itemId}`, { timeout: 10000 })
+  const price = parseFloat(data.price)
+  const originalPrice = data.original_price ? parseFloat(data.original_price) : undefined
+  return {
+    id: itemId,
+    name: (data.title as string).slice(0, 80),
+    price: `R$${price.toFixed(2).replace('.', ',')}`,
+    originalPrice: originalPrice ? `R$${originalPrice.toFixed(2).replace('.', ',')}` : undefined,
+    imageUrl: bestImageUrl(data),
+    permalink: data.permalink as string,
+  }
+}
+
+async function fetchFromCatalogApi(catalogId: string, originalUrl: string): Promise<MLProductInfo | null> {
+  const { data } = await axios.get(`${ML_API}/catalog/products/${catalogId}`, { timeout: 10000 })
+
+  const winner = data.buy_box_winner as { price?: number; original_price?: number; item_id?: string } | undefined
+  const price = winner?.price ?? 0
+  const originalPrice = winner?.original_price
+
+  const pictures = data.pictures as { url?: string }[] | undefined
+  const imageUrl = pictures?.[0]?.url?.replace('http://', 'https://') ?? ''
+
+  if (!imageUrl) return null
+
+  return {
+    id: catalogId,
+    name: (data.name as string ?? '').slice(0, 80),
+    price: price ? `R$${price.toFixed(2).replace('.', ',')}` : '',
+    originalPrice: originalPrice ? `R$${originalPrice.toFixed(2).replace('.', ',')}` : undefined,
+    imageUrl,
+    permalink: originalUrl,
+  }
+}
+
 export async function fetchMLProductInfo(url: string): Promise<MLProductInfo | null> {
   try {
     let resolved = url
@@ -69,23 +123,13 @@ export async function fetchMLProductInfo(url: string): Promise<MLProductInfo | n
       resolved = await expandShortLink(url)
     }
 
-    const itemId = extractMLProductId(resolved)
-    if (!itemId) return null
+    const productId = extractMLProductId(resolved)
+    if (!productId) return null
 
-    const { data } = await axios.get(`${ML_API}/items/${itemId}`, { timeout: 10000 })
-
-    const price = parseFloat(data.price)
-    const originalPrice = data.original_price ? parseFloat(data.original_price) : undefined
-    const thumbnail: string = (data.thumbnail ?? '').replace('http://', 'https://').replace('-I.jpg', '-O.jpg')
-
-    return {
-      id: itemId,
-      name: (data.title as string).slice(0, 80),
-      price: `R$${price.toFixed(2).replace('.', ',')}`,
-      originalPrice: originalPrice ? `R$${originalPrice.toFixed(2).replace('.', ',')}` : undefined,
-      imageUrl: thumbnail,
-      permalink: data.permalink as string,
+    if (isCatalogId(productId)) {
+      return await fetchFromCatalogApi(productId, resolved)
     }
+    return await fetchFromItemsApi(productId)
   } catch {
     return null
   }
