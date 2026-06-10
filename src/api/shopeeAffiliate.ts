@@ -172,9 +172,13 @@ export async function fetchShopeeDeals(limitPerCategory = 8): Promise<ShopeeProd
 // ── Fetch product info by URL (extracts itemId, queries API) ─────────────────
 
 function parseShopeeItemId(url: string): number | null {
-  // Format: shopee.com.br/product-name-i.{shopId}.{itemId}
-  const match = url.match(/[/-]i\.(\d+)\.(\d+)/)
-  return match ? parseInt(match[2]) : null
+  // Format 1: /product-name-i.{shopId}.{itemId}
+  const m1 = url.match(/[/-]i\.(\d+)\.(\d+)/)
+  if (m1) return parseInt(m1[2])
+  // Format 2: /product/{shopId}/{itemId} (links curtos expandidos)
+  const m2 = url.match(/\/product\/\d+\/(\d+)/)
+  if (m2) return parseInt(m2[1])
+  return null
 }
 
 export async function expandShortLink(url: string): Promise<string> {
