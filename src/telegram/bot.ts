@@ -7,6 +7,7 @@ import { buildMessagePayload, fmt } from '../content/messageBuilder.js'
 import { sendOfferMessage } from '../api/metaClient.js'
 import { generateAffiliateLink, fetchShopeeProductByUrl, expandShortLink, CATEGORY_META, type SubIds, type DealCategory } from '../api/shopeeAffiliate.js'
 import { injectAmazonTag, isAmazonUrl } from '../api/amazonAffiliate.js'
+import { injectMLTag, isMercadoLivreUrl, fetchMLProductInfo } from '../api/mercadoLivreAffiliate.js'
 import { type UnifiedDeal } from '../server/index.js'
 
 import type { Telegram } from 'telegraf'
@@ -167,6 +168,7 @@ const offerWizard = new Scenes.WizardScene<Ctx>(
     const status = await ctx.reply('🔍 Processando produto...')
     const isShopee = text.includes('shopee.com.br') || text.includes('s.shopee.com.br') || text.includes('shp.ee')
     const isAmazon = isAmazonUrl(text)
+    const isML = isMercadoLivreUrl(text)
 
     try {
       // Auto-generate affiliate link + fetch product info from Shopee API in parallel
@@ -200,11 +202,35 @@ const offerWizard = new Scenes.WizardScene<Ctx>(
           ctx.chat!.id, status.message_id, undefined,
           `🔗 Tag Amazon adicionada!\n\n⏳ Extraindo dados do produto...`,
         )
+      } else if (isML) {
+        const [affiliateResult, mlInfo] = await Promise.allSettled([
+          injectMLTag(text),
+          fetchMLProductInfo(text),
+        ])
+        if (affiliateResult.status === 'fulfilled') affiliateUrl = affiliateResult.value
+        if (mlInfo.status === 'fulfilled' && mlInfo.value) {
+          const info = mlInfo.value
+          ctx.wizard.state.product = {
+            name: info.name,
+            price: info.price,
+            originalPrice: info.originalPrice,
+            imageUrl: info.imageUrl,
+            originalUrl: affiliateUrl,
+          }
+        }
+        scrapeUrl = affiliateUrl
+        await ctx.telegram.editMessageText(
+          ctx.chat!.id, status.message_id, undefined,
+          `🔗 Link ML com tag adicionada!\n\n⏳ Extraindo dados do produto...`,
+        )
       }
 
       // Montar produto com melhor fonte disponível
       let product: ProductData
-      if (isAmazon) {
+      if (isML && ctx.wizard.state.product) {
+        // ML: API pública retornou dados — usa direto
+        product = ctx.wizard.state.product
+      } else if (isAmazon) {
         // Amazon: fetch leve (OG tags) antes de abrir o Playwright
         const quick = await quickFetchProduct(scrapeUrl)
         product = quick ?? await scrapeProduct(scrapeUrl)

@@ -11,6 +11,7 @@ import { sendOfferMessage } from '../api/metaClient.js'
 import { appendHistory, loadHistory } from './history.js'
 import { fetchDeals as fetchPelandoDeals } from '../content/pelando.js'
 import { fetchShopeeDeals, generateAffiliateLink, CATEGORY_META, type SubIds, type DealCategory } from '../api/shopeeAffiliate.js'
+import { fetchMLDealsByKeyword } from '../api/mercadoLivreAffiliate.js'
 import { createBot, sendProductToChat, sendDealToChat } from '../telegram/bot.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -82,7 +83,7 @@ export interface UnifiedDeal {
   imageUrl: string
   affiliateUrl: string   // ready-to-use affiliate link
   productLink?: string   // canonical Shopee URL — use as originUrl when generating links with subIds
-  source: 'shopee' | 'amazon'
+  source: 'shopee' | 'amazon' | 'mercado-livre'
   category: DealCategory
   publishedAt: string
 }
@@ -146,6 +147,43 @@ export async function refreshDeals() {
     console.log(`[amazon] ✓ ${pelandoDeals.length} deals via Pelando`)
   } catch (err) {
     console.error('[amazon] Erro:', err instanceof Error ? err.message : err)
+  }
+
+  // Mercado Livre via API pública
+  try {
+    const ML_KEYWORDS = [
+      'fralda pampers', 'fralda huggies', 'carrinho bebe', 'berco bebe',
+      'bebe conforto', 'mamadeira', 'chupeta', 'monitor bebe',
+      'tapete atividades bebe', 'termometro bebe',
+    ]
+    const mlResults = await Promise.allSettled(
+      ML_KEYWORDS.map(k => fetchMLDealsByKeyword(k, 5))
+    )
+    const seenML = new Set<string>()
+    for (const r of mlResults) {
+      if (r.status !== 'fulfilled') continue
+      for (const d of r.value) {
+        if (seenML.has(d.id)) continue
+        seenML.add(d.id)
+        results.push({
+          id: d.id,
+          title: d.title,
+          price: d.price,
+          originalPrice: d.originalPrice,
+          discountPercent: d.discountPercent,
+          store: d.store,
+          imageUrl: d.imageUrl,
+          affiliateUrl: d.affiliateUrl,
+          source: 'mercado-livre',
+          category: 'geral',
+          publishedAt: now,
+        })
+      }
+    }
+    const mlCount = [...seenML].length
+    console.log(`[mercadolivre] ✓ ${mlCount} produtos encontrados`)
+  } catch (err) {
+    console.error('[mercadolivre] Erro:', err instanceof Error ? err.message : err)
   }
 
   dealsCache = results
