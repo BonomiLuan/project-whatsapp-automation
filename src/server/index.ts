@@ -2,6 +2,7 @@ import 'dotenv/config'
 import express from 'express'
 import axios from 'axios'
 import cron from 'node-cron'
+import rateLimit from 'express-rate-limit'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { createHmac } from 'crypto'
@@ -14,10 +15,72 @@ import { fetchShopeeDeals, generateAffiliateLink, CATEGORY_META, type SubIds, ty
 import { fetchMLDealsByKeyword, fetchMLProductInfo, injectMLTag } from '../api/mercadoLivreAffiliate.js'
 import { quickFetchProduct } from '../scraper/productScraper.js'
 import { createBot, sendProductToChat, sendDealToChat } from '../telegram/bot.js'
+import { initLinksTable, getLink, incrementClick, getLinks, isSsrfAllowed, buildExpiredRedirectUrl, type LinkEntry } from './links.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const app = express()
 const PORT = process.env.PORT || 3000
+
+// ── Links: image LRU cache ────────────────────────────────────────────────────
+interface ImageCacheEntry { buffer: Buffer; contentType: string; cachedAt: number }
+const imageCache = new Map<string, ImageCacheEntry>()
+const IMAGE_CACHE_MAX = 200
+
+function lruSet(code: string, entry: ImageCacheEntry): void {
+  if (imageCache.size >= IMAGE_CACHE_MAX) {
+    const firstKey = imageCache.keys().next().value
+    if (firstKey !== undefined) imageCache.delete(firstKey)
+  }
+  imageCache.set(code, entry)
+}
+
+// ── Links: rate limiter ───────────────────────────────────────────────────────
+const redirectLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 60,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { error: 'Too many requests' },
+})
+
+// ── Links: helpers ────────────────────────────────────────────────────────────
+function esc(str: string): string {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+function getBaseUrl(req: express.Request): string {
+  if (req.protocol === 'http' && req.headers['x-forwarded-proto'] === 'https') {
+    return 'https://' + req.get('host')
+  }
+  const host = req.get('host')
+  if (!host) return process.env.BASE_URL || 'http://localhost:3000'
+  return req.protocol + '://' + host
+}
+
+function buildOGPage(link: LinkEntry, baseUrl: string): string {
+  const title = esc(link.title)
+  const sourceName = link.source === 'ml' ? 'Mercado Livre' : link.source.charAt(0).toUpperCase() + link.source.slice(1)
+  const description = esc(sourceName + ' — Clique para ver a oferta')
+  const ogImage = baseUrl + '/img/' + link.code
+  const ogUrl = baseUrl + '/r/' + link.code
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta property="og:title" content="${title}">
+<meta property="og:description" content="${description}">
+<meta property="og:image" content="${ogImage}">
+<meta property="og:url" content="${ogUrl}">
+<meta property="og:type" content="website">
+<meta http-equiv="refresh" content="0;url=${link.affiliate_url}">
+<title>${title}</title>
+</head>
+<body>
+<p>Redirecionando para a oferta...</p>
+<script>window.location.href = ${JSON.stringify(link.affiliate_url)};</script>
+</body>
+</html>`
+}
 
 // ── Auth helpers ──────────────────────────────────────────────────────────────
 const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD || 'admin'
@@ -329,6 +392,69 @@ app.get('/hoje', (_req, res) => {
   res.sendFile(join(__dirname, '../../public/hoje.html'))
 })
 
+// GET /r/:code — OG tag HTML + meta refresh, rate-limited, click increment
+app.get('/r/:code', redirectLimiter, async (req, res) => {
+  try {
+    const code = String(req.params.code)
+    const link = await getLink(code)
+    if (!link) return res.status(404).json({ error: 'Link não encontrado' })
+    if (new Date() > link.expires_at) {
+      const searchUrl = buildExpiredRedirectUrl(link.source, link.title)
+      return res.redirect(302, searchUrl)
+    }
+    incrementClick(code).catch(err => console.warn('[links] incrementClick error:', err))
+    const baseUrl = getBaseUrl(req)
+    return res.status(200).type('html').send(buildOGPage(link, baseUrl))
+  } catch (err) {
+    console.error('[/r/:code]', err)
+    return res.status(500).json({ error: 'Erro interno' })
+  }
+})
+
+// GET /img/:code — SSRF-safe image proxy with LRU cache + 24h Cache-Control
+app.get('/img/:code', async (req, res) => {
+  try {
+    const code = String(req.params.code)
+    const cached = imageCache.get(code)
+    if (cached) {
+      return res.set('Content-Type', cached.contentType).set('Cache-Control', 'public, max-age=86400').send(cached.buffer)
+    }
+    const link = await getLink(code)
+    if (!link) return res.status(404).json({ error: 'Link não encontrado' })
+    if (!isSsrfAllowed(link.image_url)) return res.status(403).json({ error: 'Image domain not allowed' })
+    try {
+      const response = await axios.get(link.image_url, {
+        responseType: 'arraybuffer',
+        timeout: 8000,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; WhatsApp/2.0)',
+          Referer: 'https://shopee.com.br/',
+        },
+      })
+      const buffer = Buffer.from(response.data as ArrayBuffer)
+      const contentType = (response.headers['content-type'] as string) || 'image/jpeg'
+      lruSet(code, { buffer, contentType, cachedAt: Date.now() })
+      return res.set('Content-Type', contentType).set('Cache-Control', 'public, max-age=86400').send(buffer)
+    } catch {
+      return res.status(502).json({ error: 'Erro ao buscar imagem' })
+    }
+  } catch (err) {
+    console.error('[/img/:code]', err)
+    return res.status(502).json({ error: 'Erro ao buscar imagem' })
+  }
+})
+
+// GET /api/links — analytics list (protected by /api auth middleware above)
+app.get('/api/links', async (_req, res) => {
+  try {
+    const links = await getLinks(100)
+    return res.json(links)
+  } catch (err) {
+    console.error('[/api/links]', err)
+    return res.status(500).json({ error: 'Erro interno' })
+  }
+})
+
 // GET /api/image-proxy
 app.get('/api/image-proxy', async (req, res) => {
   const url = req.query.url as string
@@ -405,6 +531,7 @@ app.listen(PORT, () => {
   console.log(`\n✅ Servidor rodando em http://localhost:${PORT}`)
   createBot()
   refreshDeals()
+  initLinksTable().catch(console.error)
   cron.schedule('*/30 * * * *', refreshDeals, { timezone: 'America/Sao_Paulo' })
   cron.schedule('*/15 7-22 * * *', sendNextSuggestion, { timezone: 'America/Sao_Paulo' })
 })
