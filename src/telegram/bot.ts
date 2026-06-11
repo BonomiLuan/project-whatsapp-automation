@@ -9,6 +9,7 @@ import { generateAffiliateLink, fetchShopeeProductByUrl, expandShortLink, CATEGO
 import { injectAmazonTag, isAmazonUrl } from '../api/amazonAffiliate.js'
 import { injectMLTag, isMercadoLivreUrl, fetchMLProductInfo } from '../api/mercadoLivreAffiliate.js'
 import { type UnifiedDeal } from '../server/index.js'
+import { createLink } from '../server/links.js'
 
 import type { Telegram } from 'telegraf'
 let telegramApi: Telegram | null = null
@@ -72,9 +73,20 @@ function buildTelegramText(product: ProductData, coupon: string, groupUrl: strin
   })
 }
 
+function detectSource(url: string): 'shopee' | 'amazon' | 'ml' {
+  if (url.includes('shopee')) return 'shopee'
+  if (url.includes('amazon') || url.includes('amzn')) return 'amazon'
+  return 'ml'
+}
+
 async function sendToTelegram(ctx: Ctx, product: ProductData, coupon: string) {
   const groupUrl = process.env.WHATSAPP_GROUP_URL || ''
-  const text = buildTelegramText(product, coupon, groupUrl)
+  let shortUrl = product.originalUrl
+  try {
+    const link = await createLink({ title: product.name, image_url: product.imageUrl ?? '', affiliate_url: product.originalUrl, source: detectSource(product.originalUrl) })
+    shortUrl = (process.env.BASE_URL || '') + '/r/' + link.code
+  } catch (err) { console.warn('[links] createLink failed in sendToTelegram, using original URL:', err) }
+  const text = buildTelegramText({ ...product, originalUrl: shortUrl }, coupon, groupUrl)
 
   if (product.imageUrl) {
     try {
@@ -719,12 +731,18 @@ export async function sendDealToChat(deal: UnifiedDeal): Promise<void> {
     } catch { /* fallback */ }
   }
 
+  let shortUrl = dealUrl
+  try {
+    const link = await createLink({ title: deal.title, image_url: deal.imageUrl ?? '', affiliate_url: dealUrl, source: deal.source === 'mercado-livre' ? 'ml' : deal.source === 'shopee' ? 'shopee' : 'amazon' })
+    shortUrl = (process.env.BASE_URL || '') + '/r/' + link.code
+  } catch (err) { console.warn('[links] createLink failed in sendDealToChat:', err) }
+
   const text = formatMessage({
     emoji: categoryEmoji,
     title: deal.title,
     originalPrice: deal.originalPrice,
     price: deal.price,
-    buyUrl: dealUrl,
+    buyUrl: shortUrl,
     groupUrl,
   })
 
@@ -756,7 +774,12 @@ export async function sendProductToChat(
   if (!telegramApi || chatIds.length === 0) throw new Error('Bot ou TELEGRAM_CHAT_ID não configurado')
 
   const groupUrl = process.env.WHATSAPP_GROUP_URL || ''
-  const text = buildTelegramText(product, coupon, groupUrl)
+  let shortUrl = product.originalUrl
+  try {
+    const link = await createLink({ title: product.name, image_url: product.imageUrl ?? '', affiliate_url: product.originalUrl, source: detectSource(product.originalUrl) })
+    shortUrl = (process.env.BASE_URL || '') + '/r/' + link.code
+  } catch (err) { console.warn('[links] createLink failed in sendProductToChat:', err) }
+  const text = buildTelegramText({ ...product, originalUrl: shortUrl }, coupon, groupUrl)
 
   for (let i = 0; i < chatIds.length; i++) {
     if (i > 0) await new Promise(r => setTimeout(r, 60_000))
@@ -794,12 +817,18 @@ async function sendDealCard(ctx: Ctx, deal: UnifiedDeal) {
   const groupUrl = process.env.WHATSAPP_GROUP_URL || ''
   const categoryEmoji = CATEGORY_META[deal.category]?.emoji ?? '🛍️'
 
+  let shortUrl = dealUrl
+  try {
+    const link = await createLink({ title: deal.title, image_url: deal.imageUrl ?? '', affiliate_url: dealUrl, source: deal.source === 'mercado-livre' ? 'ml' : deal.source === 'shopee' ? 'shopee' : 'amazon' })
+    shortUrl = (process.env.BASE_URL || '') + '/r/' + link.code
+  } catch (err) { console.warn('[links] createLink failed in sendDealCard:', err) }
+
   const text = formatMessage({
     emoji: categoryEmoji,
     title: deal.title,
     originalPrice: deal.originalPrice,
     price: deal.price,
-    buyUrl: dealUrl,
+    buyUrl: shortUrl,
     groupUrl,
   })
 
