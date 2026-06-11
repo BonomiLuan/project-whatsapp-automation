@@ -276,6 +276,10 @@ export interface MLDeal {
   store: string
 }
 
+export function buildMLSearchUrl(title: string): string {
+  return 'https://www.mercadolivre.com.br/jm/search?as_word=' + encodeURIComponent(title) + '&matt_tool=' + PUBLISHER_ID + '&matt_word=' + MATT_WORD
+}
+
 export async function fetchMLDealsByKeyword(keyword: string, limit = 10): Promise<MLDeal[]> {
   try {
     const { data } = await axios.get(`${ML_API}/sites/MLB/search`, {
