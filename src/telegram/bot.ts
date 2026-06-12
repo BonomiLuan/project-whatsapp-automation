@@ -243,13 +243,23 @@ const offerWizard = new Scenes.WizardScene<Ctx>(
         // ML: API retornou dados — usa direto
         product = ctx.wizard.state.product
       } else if (isML) {
-        // ML: API falhou — entrada manual (sem Playwright, que não funciona no ML)
+        // ML: API falhou — tentar Playwright (stealth) antes do manual
         await ctx.telegram.editMessageText(
           ctx.chat!.id, status.message_id, undefined,
-          `🔗 Link ML com tag gerada!\n\n⚠️ Não consegui extrair dados automaticamente.\n\n💰 Digite o preço promocional:`,
+          `🔗 Link ML com tag gerada!\n\n⏳ Tentando extrair dados via navegador...`,
         )
-        ctx.wizard.state.product = { name: 'Produto Mercado Livre', price: '', imageUrl: '', originalUrl: affiliateUrl }
-        return ctx.wizard.next() // step 2: pede preço manualmente
+        let mlScraped: ProductData | null = null
+        try { mlScraped = await scrapeProduct(scrapeUrl) } catch { /* segue manual */ }
+        if (mlScraped?.name && (mlScraped.price || mlScraped.imageUrl)) {
+          product = { ...mlScraped, originalUrl: affiliateUrl }
+        } else {
+          await ctx.telegram.editMessageText(
+            ctx.chat!.id, status.message_id, undefined,
+            `🔗 Link ML com tag gerada!\n\n⚠️ Não consegui extrair dados automaticamente.\n\n💰 Digite o preço promocional:`,
+          )
+          ctx.wizard.state.product = { name: mlScraped?.name || 'Produto Mercado Livre', price: '', imageUrl: mlScraped?.imageUrl || '', originalUrl: affiliateUrl }
+          return ctx.wizard.next()
+        }
       } else if (isAmazon) {
         // Amazon: fetch leve (OG tags) antes de abrir o Playwright
         const quick = await quickFetchProduct(scrapeUrl)
