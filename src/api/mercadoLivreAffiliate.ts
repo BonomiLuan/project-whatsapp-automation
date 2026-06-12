@@ -5,8 +5,7 @@ const MATT_WORD = process.env.ML_MATT_WORD ?? 'mamaeeconomica'
 
 const ML_API = 'https://api.mercadolibre.com'
 
-// ── OAuth app token (client_credentials) ─────────────────────────────────────
-
+// OAuth app token — necessário apenas para endpoints privados (ex: /items/{id}/prices)
 let cachedToken: { token: string; expiresAt: number } | null = null
 
 async function getAppToken(): Promise<string | null> {
@@ -14,7 +13,6 @@ async function getAppToken(): Promise<string | null> {
   const clientSecret = process.env.ML_CLIENT_SECRET
   if (!clientId || !clientSecret) return null
 
-  // Reuse cached token if still valid (with 5 min buffer)
   if (cachedToken && Date.now() < cachedToken.expiresAt - 300_000) {
     return cachedToken.token
   }
@@ -38,25 +36,17 @@ async function getAppToken(): Promise<string | null> {
   return cachedToken.token
 }
 
-async function mlHeaders(): Promise<Record<string, string>> {
-  const base: Record<string, string> = {
-    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Accept': 'application/json',
-    'Accept-Language': 'pt-BR,pt;q=0.9',
-  }
-  try {
-    const token = await getAppToken()
-    if (token) base['Authorization'] = `Bearer ${token}`
-  } catch (e) {
-    console.log('[ml] falha ao obter token:', (e as Error).message)
-  }
-  return base
+// Endpoints públicos NÃO precisam de Authorization — injetar Bearer causa 403 PolicyAgent
+// User-Agent é necessário — sem ele o search retorna 403
+const ML_PUBLIC_HEADERS = {
+  Accept: 'application/json',
+  'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
 }
 
-const ML_HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  'Accept': 'application/json',
-  'Accept-Language': 'pt-BR,pt;q=0.9',
+export async function mlAuthHeaders(): Promise<Record<string, string>> {
+  const token = await getAppToken()
+  if (!token) return ML_PUBLIC_HEADERS
+  return { ...ML_PUBLIC_HEADERS, Authorization: `Bearer ${token}` }
 }
 
 export interface MLProductInfo {
@@ -68,8 +58,24 @@ export interface MLProductInfo {
   permalink: string
 }
 
-// Matches both MLB123 (regular item) and MLBU123 (catalog/universal product)
+// Extrai ID do produto. Prioriza item_id explícito nos query params (presente em URLs de catálogo
+// compartilhadas via app — pdp_filters=item_id:MLB...) sobre o ID do path.
 function extractMLProductId(url: string): string | null {
+  try {
+    const parsed = new URL(url)
+
+    // pdp_filters=item_id:MLB4680610597 — presente em links MLBU compartilhados
+    const pdpFilters = parsed.searchParams.get('pdp_filters') ?? ''
+    const filterMatch = pdpFilters.match(/item_id:(MLB\d+)/i)
+    if (filterMatch) return filterMatch[1].toUpperCase()
+
+    // wid=MLB... presente no fragment (#...&wid=MLB...)
+    const fragment = parsed.hash.slice(1)
+    const widMatch = new URLSearchParams(fragment).get('wid')
+    if (widMatch && /^MLB\d+$/i.test(widMatch)) return widMatch.toUpperCase()
+  } catch { /* URL inválida */ }
+
+  // Fallback: primeiro ID MLB/MLBU no texto da URL
   const match = url.match(/MLB[A-Z]?\d+/i)
   return match ? match[0].toUpperCase() : null
 }
@@ -98,7 +104,6 @@ export async function injectMLTag(url: string): Promise<string> {
       resolved = await expandShortLink(url)
     }
     const parsed = new URL(resolved)
-    // Remove any existing matt_ params before injecting fresh ones
     parsed.searchParams.delete('matt_tool')
     parsed.searchParams.delete('matt_word')
     parsed.searchParams.delete('ref')
@@ -122,20 +127,21 @@ export function isMercadoLivreUrl(url: string): boolean {
 }
 
 function bestImageUrl(data: Record<string, unknown>): string {
-  // Prefer full-size picture from the pictures array
   const pictures = data.pictures as { url?: string; secure_url?: string }[] | undefined
   if (pictures?.length) {
     const pic = pictures[0]
     const raw = (pic.secure_url ?? pic.url ?? '') as string
     return raw.replace('http://', 'https://')
   }
-  // Fall back to thumbnail, upgrading from small (-I) to medium (-O)
   const thumb = ((data.thumbnail as string) ?? '').replace('http://', 'https://')
   return thumb.replace(/-I\.(jpg|webp)$/i, '-O.$1')
 }
 
 async function fetchFromItemsApi(itemId: string): Promise<MLProductInfo | null> {
-  const { data } = await axios.get(`${ML_API}/items/${itemId}`, { headers: await mlHeaders(), timeout: 10000 })
+  const { data } = await axios.get(`${ML_API}/items/${itemId}`, {
+    headers: ML_PUBLIC_HEADERS,
+    timeout: 10000,
+  })
   const price = parseFloat(data.price)
   const originalPrice = data.original_price ? parseFloat(data.original_price) : undefined
   return {
@@ -148,32 +154,70 @@ async function fetchFromItemsApi(itemId: string): Promise<MLProductInfo | null> 
   }
 }
 
-async function fetchFromCatalogApi(catalogId: string, originalUrl: string): Promise<MLProductInfo | null> {
-  console.log(`[ml] catalog API → ${ML_API}/catalog/products/${catalogId}`)
-  const { data } = await axios.get(`${ML_API}/catalog/products/${catalogId}`, { headers: await mlHeaders(), timeout: 10000 })
-  console.log(`[ml] catalog keys:`, Object.keys(data).join(', '))
+async function fetchFromCatalogProduct(catalogId: string, originalUrl: string): Promise<MLProductInfo | null> {
+  console.log(`[ml] catalog_products → ${catalogId}`)
+  const { data } = await axios.get(`${ML_API}/catalog_products/${catalogId}`, {
+    headers: ML_PUBLIC_HEADERS,
+    timeout: 10000,
+  })
 
-  const winner = data.buy_box_winner as { price?: number; original_price?: number; item_id?: string } | undefined
-  const price = winner?.price ?? 0
-  const originalPrice = winner?.original_price
+  const name = (data.name as string ?? '').slice(0, 80)
+  const pictures = data.pictures as { url?: string; secure_url?: string }[] | undefined
+  const imageUrl = pictures?.[0]
+    ? ((pictures[0].secure_url ?? pictures[0].url ?? '') as string).replace('http://', 'https://')
+    : ''
 
-  const pictures = data.pictures as { url?: string }[] | undefined
-  const imageUrl = pictures?.[0]?.url?.replace('http://', 'https://') ?? ''
-  console.log(`[ml] catalog imageUrl: ${imageUrl}, price: ${price}`)
+  if (!name || !imageUrl) return null
 
-  if (!imageUrl) return null
+  // Busca preço via search por keyword do nome do catálogo
+  let price = ''
+  let originalPrice: string | undefined
+  try {
+    const { data: sr } = await axios.get(`${ML_API}/sites/MLB/search`, {
+      params: { q: name, limit: 1 },
+      headers: ML_PUBLIC_HEADERS,
+      timeout: 8000,
+    })
+    const first = (sr.results as MLSearchItem[] | undefined)?.[0]
+    if (first) {
+      price = `R$${first.price.toFixed(2).replace('.', ',')}`
+      originalPrice = first.original_price ? `R$${first.original_price.toFixed(2).replace('.', ',')}` : undefined
+      console.log(`[ml] catalog_products ok: "${name}" | ${price} | img: ${imageUrl.slice(0, 60)}`)
+    }
+  } catch (e) {
+    console.log(`[ml] price search falhou: ${(e as Error).message}`)
+  }
+
+  return { id: catalogId, name, price: price || '—', originalPrice, imageUrl, permalink: originalUrl }
+}
+
+async function fetchFromCatalogSearch(catalogId: string, originalUrl: string): Promise<MLProductInfo | null> {
+  console.log(`[ml] catalog search → catalog_product_id=${catalogId}`)
+  const { data } = await axios.get(`${ML_API}/sites/MLB/search`, {
+    params: { catalog_product_id: catalogId, limit: 1 },
+    headers: ML_PUBLIC_HEADERS,
+    timeout: 10000,
+  })
+
+  const item = (data.results as MLSearchItem[] | undefined)?.[0]
+  if (!item) {
+    console.log(`[ml] catalog search sem resultados para ${catalogId}`)
+    return null
+  }
+
+  const imageUrl = (item.thumbnail ?? '').replace('http://', 'https://').replace(/-I\.(jpg|webp)$/i, '-O.$1')
+  console.log(`[ml] catalog search result: "${item.title}" | R$${item.price} | img: ${imageUrl}`)
 
   return {
-    id: catalogId,
-    name: (data.name as string ?? '').slice(0, 80),
-    price: price ? `R$${price.toFixed(2).replace('.', ',')}` : '',
-    originalPrice: originalPrice ? `R$${originalPrice.toFixed(2).replace('.', ',')}` : undefined,
+    id: item.id,
+    name: item.title.slice(0, 80),
+    price: `R$${item.price.toFixed(2).replace('.', ',')}`,
+    originalPrice: item.original_price ? `R$${item.original_price.toFixed(2).replace('.', ',')}` : undefined,
     imageUrl,
     permalink: originalUrl,
   }
 }
 
-// Fallback para MLBU: extrai keywords do slug da URL e busca via search
 async function fetchFromSlugSearch(url: string): Promise<MLProductInfo | null> {
   const slug = url.match(/mercadolivre\.com\.br\/([^/?#]+)/)?.[1] ?? ''
   if (!slug) return null
@@ -181,36 +225,34 @@ async function fetchFromSlugSearch(url: string): Promise<MLProductInfo | null> {
   const keywords = slug.replace(/-/g, ' ').split(' ').slice(0, 6).join(' ')
   console.log(`[ml] slug search → "${keywords}"`)
 
-  let searchData: Record<string, unknown>
+  let data: Record<string, unknown>
   try {
     const r = await axios.get(`${ML_API}/sites/MLB/search`, {
       params: { q: keywords, limit: 1 },
-      headers: await mlHeaders(),
+      headers: ML_PUBLIC_HEADERS,
       timeout: 10000,
     })
-    searchData = r.data
+    data = r.data
   } catch (e) {
     const axErr = e as import('axios').AxiosError
-    console.log(`[ml] slug search falhou: ${axErr.message} | body: ${JSON.stringify(axErr.response?.data)}`)
+    console.log(`[ml] slug search falhou: ${axErr.response?.status} | body: ${JSON.stringify(axErr.response?.data)}`)
     return null
   }
 
-  const item = (searchData.results as MLSearchItem[] | undefined)?.[0]
-  if (!item) return null
+  const item = (data.results as MLSearchItem[] | undefined)?.[0]
+  if (!item) { console.log('[ml] slug search: sem resultados'); return null }
 
-  const price = item.price
-  const originalPrice = item.original_price ?? undefined
   const imageUrl = (item.thumbnail ?? '').replace('http://', 'https://').replace(/-I\.(jpg|webp)$/i, '-O.$1')
-  console.log(`[ml] slug result: "${item.title}" | R$${price} | img: ${imageUrl}`)
-
   if (!imageUrl) return null
+
+  console.log(`[ml] slug result: "${item.title}" | R$${item.price} | img: ${imageUrl}`)
 
   const affiliateUrl = await injectMLTag(item.permalink)
   return {
     id: item.id,
     name: item.title.slice(0, 80),
-    price: `R$${price.toFixed(2).replace('.', ',')}`,
-    originalPrice: originalPrice ? `R$${originalPrice.toFixed(2).replace('.', ',')}` : undefined,
+    price: `R$${item.price.toFixed(2).replace('.', ',')}`,
+    originalPrice: item.original_price ? `R$${item.original_price.toFixed(2).replace('.', ',')}` : undefined,
     imageUrl,
     permalink: affiliateUrl,
   }
@@ -226,22 +268,29 @@ export async function fetchMLProductInfo(url: string): Promise<MLProductInfo | n
   console.log(`[ml] productId extraído: ${productId ?? 'NENHUM'} de ${resolved.slice(0, 80)}`)
 
   if (!productId) {
-    // Sem ID extraível — tenta busca por slug diretamente
     try { return await fetchFromSlugSearch(resolved) } catch { return null }
   }
 
   if (isCatalogId(productId)) {
-    // Tenta catalog API, depois slug search como fallback
+    // MLBU: catalog_products endpoint → catalog search → slug search
     try {
-      const result = await fetchFromCatalogApi(productId, resolved)
+      const result = await fetchFromCatalogProduct(productId, resolved)
       if (result) return result
     } catch (e) {
-      console.log(`[ml] catalog API falhou: ${(e as Error).message}`)
+      const axErr = e as import('axios').AxiosError
+      console.log(`[ml] catalog_products falhou: ${axErr.response?.status} | body: ${JSON.stringify(axErr.response?.data)}`)
     }
-    try { return await fetchFromSlugSearch(resolved) } catch { return null }
+    try {
+      const result = await fetchFromCatalogSearch(productId, resolved)
+      if (result) return result
+    } catch (e) {
+      const axErr = e as import('axios').AxiosError
+      console.log(`[ml] catalog search falhou: ${axErr.response?.status} | body: ${JSON.stringify(axErr.response?.data)}`)
+    }
+    return await fetchFromSlugSearch(resolved)
   }
 
-  // Item regular MLB
+  // Item regular MLB: items API → slug search
   try {
     return await fetchFromItemsApi(productId)
   } catch (e) {
@@ -251,7 +300,7 @@ export async function fetchMLProductInfo(url: string): Promise<MLProductInfo | n
   }
 }
 
-// ── Busca de deals por keyword via API pública ────────────────────────────────
+// ── Busca de deals por keyword ────────────────────────────────────────────────
 
 interface MLSearchItem {
   id: string
@@ -261,7 +310,6 @@ interface MLSearchItem {
   thumbnail: string
   permalink: string
   seller: { nickname: string }
-  reviews?: { rating_average: number }
 }
 
 export interface MLDeal {
@@ -281,12 +329,16 @@ export function buildMLSearchUrl(title: string): string {
 }
 
 export async function fetchMLDealsByKeyword(keyword: string, limit = 10): Promise<MLDeal[]> {
+  console.log(`[ml:deals] buscando "${keyword}" (limit=${limit})`)
   try {
     const { data } = await axios.get(`${ML_API}/sites/MLB/search`, {
       params: { q: keyword, sort: 'relevance', limit },
-      headers: await mlHeaders(),
+      headers: ML_PUBLIC_HEADERS,
       timeout: 10000,
     })
+
+    const total = (data.results as MLSearchItem[] | undefined)?.length ?? 0
+    console.log(`[ml:deals] "${keyword}" → ${total} resultados brutos`)
 
     const results: MLDeal[] = []
     for (const item of (data.results ?? []) as MLSearchItem[]) {
@@ -309,8 +361,12 @@ export async function fetchMLDealsByKeyword(keyword: string, limit = 10): Promis
         store: item.seller?.nickname ?? 'Mercado Livre',
       })
     }
+
+    console.log(`[ml:deals] "${keyword}" → ${results.length} com desconto ≥10%`)
     return results
-  } catch {
+  } catch (e) {
+    const axErr = e as import('axios').AxiosError
+    console.log(`[ml:deals] "${keyword}" falhou: ${axErr.response?.status ?? axErr.message} | body: ${JSON.stringify(axErr.response?.data)}`)
     return []
   }
 }

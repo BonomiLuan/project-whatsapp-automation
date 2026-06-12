@@ -480,12 +480,14 @@ app.get('/api/image-proxy', async (req, res) => {
 
 const sentToday = new Set<string>()
 let roundRobinIndex = 0
+let lastSentSource: string | null = null
 
 // Reset sent list at midnight Brasília time
 cron.schedule('0 0 * * *', () => {
   sentToday.clear()
   sentTodayLog = []
   roundRobinIndex = 0
+  lastSentSource = null
   console.log('[cron] Reset de ofertas enviadas')
 }, { timezone: 'America/Sao_Paulo' })
 
@@ -516,12 +518,22 @@ async function sendNextSuggestion() {
   // Fallback: pick any random available deal
   if (!deal) deal = available[Math.floor(Math.random() * available.length)]
 
+  // Variedade de fonte: se o candidato é da mesma fonte que o último enviado,
+  // prefere uma fonte diferente (shopee → amazon → shopee etc.)
+  if (deal && lastSentSource && deal.source === lastSentSource) {
+    const altPool = available.filter(d => d.source !== lastSentSource)
+    if (altPool.length > 0) {
+      deal = altPool[Math.floor(Math.random() * altPool.length)]
+    }
+  }
+
   try {
     await sendDealToChat(deal)
     sentToday.add(deal.id)
+    lastSentSource = deal.source
     sentTodayLog.push({ ...deal, sentAt: new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) })
     dealsCache = dealsCache.filter(d => d.id !== deal!.id)
-    console.log(`[suggest] ✓ ${deal.category} — ${deal.title.slice(0, 40)}`)
+    console.log(`[suggest] ✓ [${deal.source}] ${deal.category} — ${deal.title.slice(0, 40)}`)
   } catch (err) {
     console.error('[suggest] Erro:', err instanceof Error ? err.message : err)
   }
