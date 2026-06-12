@@ -12,7 +12,7 @@ import { sendOfferMessage } from '../api/metaClient.js'
 import { appendHistory, loadHistory } from './history.js'
 import { fetchDeals as fetchPelandoDeals } from '../content/pelando.js'
 import { fetchShopeeDeals, generateAffiliateLink, CATEGORY_META, type SubIds, type DealCategory } from '../api/shopeeAffiliate.js'
-import { fetchMLDealsByKeyword, fetchMLProductInfo, injectMLTag } from '../api/mercadoLivreAffiliate.js'
+import { fetchMLProductInfo, injectMLTag } from '../api/mercadoLivreAffiliate.js'
 import { quickFetchProduct } from '../scraper/productScraper.js'
 import { createBot, sendProductToChat, sendDealToChat } from '../telegram/bot.js'
 import { initLinksTable, getLink, incrementClick, getLinks, isSsrfAllowed, buildExpiredRedirectUrl, type LinkEntry } from './links.js'
@@ -219,10 +219,15 @@ export async function refreshDeals() {
     }
   }
 
-  // Amazon via Pelando (always runs in parallel with Shopee)
+  // Amazon + Mercado Livre via Pelando
   try {
     const pelandoDeals = await fetchPelandoDeals()
+    let amazonCount = 0, mlCount = 0
     for (const d of pelandoDeals) {
+      const storeLower = d.store.toLowerCase()
+      const isML = storeLower.includes('mercado') || storeLower.includes('mercadolivre') || storeLower === 'ml'
+      const source: UnifiedDeal['source'] = isML ? 'mercado-livre' : 'amazon'
+      if (isML) mlCount++; else amazonCount++
       results.push({
         id: d.id,
         title: d.title,
@@ -231,51 +236,14 @@ export async function refreshDeals() {
         store: d.store,
         imageUrl: d.imageUrl,
         affiliateUrl: d.dealUrl,
-        source: 'amazon',
+        source,
         category: 'geral',
         publishedAt: d.publishedAt,
       })
     }
-    console.log(`[amazon] ✓ ${pelandoDeals.length} deals via Pelando`)
+    console.log(`[pelando] ✓ ${amazonCount} Amazon + ${mlCount} Mercado Livre`)
   } catch (err) {
-    console.error('[amazon] Erro:', err instanceof Error ? err.message : err)
-  }
-
-  // Mercado Livre via API pública
-  try {
-    const ML_KEYWORDS = [
-      'fralda pampers', 'fralda huggies', 'carrinho bebe', 'berco bebe',
-      'bebe conforto', 'mamadeira', 'chupeta', 'monitor bebe',
-      'tapete atividades bebe', 'termometro bebe',
-    ]
-    const mlResults = await Promise.allSettled(
-      ML_KEYWORDS.map(k => fetchMLDealsByKeyword(k, 5))
-    )
-    const seenML = new Set<string>()
-    for (const r of mlResults) {
-      if (r.status !== 'fulfilled') continue
-      for (const d of r.value) {
-        if (seenML.has(d.id)) continue
-        seenML.add(d.id)
-        results.push({
-          id: d.id,
-          title: d.title,
-          price: d.price,
-          originalPrice: d.originalPrice,
-          discountPercent: d.discountPercent,
-          store: d.store,
-          imageUrl: d.imageUrl,
-          affiliateUrl: d.affiliateUrl,
-          source: 'mercado-livre',
-          category: 'geral',
-          publishedAt: now,
-        })
-      }
-    }
-    const mlCount = [...seenML].length
-    console.log(`[mercadolivre] ✓ ${mlCount} produtos encontrados`)
-  } catch (err) {
-    console.error('[mercadolivre] Erro:', err instanceof Error ? err.message : err)
+    console.error('[pelando] Erro:', err instanceof Error ? err.message : err)
   }
 
   dealsCache = results

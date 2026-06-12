@@ -1,6 +1,7 @@
 import { chromium } from 'playwright-extra'
 import StealthPlugin from 'puppeteer-extra-plugin-stealth'
 import { injectAmazonTag } from '../api/amazonAffiliate.js'
+import { buildMLSearchUrl } from '../api/mercadoLivreAffiliate.js'
 
 chromium.use(StealthPlugin())
 
@@ -23,7 +24,7 @@ const CATEGORIES = [
 
 const MIN_TEMPERATURE = 20
 
-const ALLOWED_STORES: string[] = ['amazon']
+const ALLOWED_STORES: string[] = ['amazon', 'mercado livre', 'mercadolivre', 'ml']
 
 export async function fetchDeals(): Promise<PelandoDeal[]> {
   const browser = await chromium.launch({ headless: true })
@@ -96,9 +97,14 @@ export async function fetchDeals(): Promise<PelandoDeal[]> {
 
           seen.add(item.dealUrl)
 
-          const dealUrl = item.store.toLowerCase().includes('amazon')
+          const storeLowerFull = item.store.toLowerCase()
+          const isAmazonDeal = storeLowerFull.includes('amazon')
+          const isMLDeal = storeLowerFull.includes('mercado') || storeLowerFull.includes('mercadolivre') || storeLowerFull === 'ml'
+          const dealUrl = isAmazonDeal
             ? await injectAmazonTag(item.dealUrl)
-            : item.dealUrl
+            : isMLDeal
+              ? buildMLSearchUrl(item.title)
+              : item.dealUrl
 
           allDeals.push({
             id: item.dealUrl,
