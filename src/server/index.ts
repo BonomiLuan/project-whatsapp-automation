@@ -59,14 +59,18 @@ function getBaseUrl(req: express.Request): string {
 
 function buildOGPage(link: LinkEntry, baseUrl: string): string {
   const title = esc(link.title)
-  const sourceName = link.source === 'ml' ? 'Mercado Livre' : link.source.charAt(0).toUpperCase() + link.source.slice(1)
+  const sourceName = link.source === 'ml' ? 'Mercado Livre' : link.source === 'amazon' ? 'Amazon' : 'Shopee'
   const description = esc(sourceName + ' — Clique para ver a oferta')
   const ogImage = baseUrl + '/img/' + link.code
   const ogUrl = baseUrl + '/r/' + link.code
+  const sourceColor = link.source === 'amazon' ? '#FF9900' : link.source === 'ml' ? '#FFE600' : '#EE4D2D'
+  const sourceBg = link.source === 'amazon' ? '#232F3E' : link.source === 'ml' ? '#3483FA' : '#fff'
+  const sourceText = link.source === 'amazon' ? '#fff' : link.source === 'ml' ? '#fff' : '#EE4D2D'
   return `<!DOCTYPE html>
-<html>
+<html lang="pt-BR">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <meta property="og:title" content="${title}">
 <meta property="og:description" content="${description}">
 <meta property="og:image" content="${ogImage}">
@@ -74,10 +78,34 @@ function buildOGPage(link: LinkEntry, baseUrl: string): string {
 <meta property="og:type" content="website">
 <meta http-equiv="refresh" content="0;url=${link.affiliate_url}">
 <title>${title}</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f5f5;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px}
+  .card{background:#fff;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,.10);max-width:400px;width:100%;overflow:hidden;animation:fadeUp .4s ease}
+  .img-wrap{width:100%;aspect-ratio:1;background:#f0f0f0;overflow:hidden}
+  .img-wrap img{width:100%;height:100%;object-fit:contain;padding:12px}
+  .body{padding:20px}
+  .badge{display:inline-flex;align-items:center;gap:6px;background:${sourceBg};color:${sourceText};border:1.5px solid ${sourceColor};border-radius:20px;font-size:12px;font-weight:600;padding:4px 10px;margin-bottom:12px}
+  .badge-dot{width:8px;height:8px;border-radius:50%;background:${sourceColor}}
+  h1{font-size:15px;font-weight:600;color:#1a1a1a;line-height:1.4;margin-bottom:20px}
+  .redirect{display:flex;align-items:center;gap:10px;color:#888;font-size:13px}
+  .spinner{width:18px;height:18px;border:2px solid #e0e0e0;border-top-color:${sourceColor};border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
+  .footer{text-align:center;padding:12px;font-size:11px;color:#bbb;border-top:1px solid #f0f0f0}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+</style>
 </head>
 <body>
-<p>Redirecionando para a oferta...</p>
-<script>window.location.href = ${JSON.stringify(link.affiliate_url)};</script>
+<div class="card">
+  <div class="img-wrap"><img src="${ogImage}" alt="${title}" onerror="this.style.display='none'"></div>
+  <div class="body">
+    <div class="badge"><span class="badge-dot"></span>${sourceName}</div>
+    <h1>${title}</h1>
+    <div class="redirect"><div class="spinner"></div>Redirecionando para a oferta…</div>
+  </div>
+  <div class="footer">Mamãe Econômica 🛍️</div>
+</div>
+<script>setTimeout(()=>{window.location.href=${JSON.stringify(link.affiliate_url)}},300)</script>
 </body>
 </html>`
 }
