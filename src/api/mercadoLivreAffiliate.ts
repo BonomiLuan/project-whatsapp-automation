@@ -258,10 +258,24 @@ async function fetchFromSlugSearch(url: string): Promise<MLProductInfo | null> {
   }
 }
 
+const ML_NON_PRODUCT_PATHS = ['/social/', '/perfil/', '/vendedor/', '/loja/', '/ajuda/', '/noindex/']
+
+function isMLProductUrl(url: string): boolean {
+  try {
+    const path = new URL(url).pathname.toLowerCase()
+    return !ML_NON_PRODUCT_PATHS.some(p => path.startsWith(p))
+  } catch { return false }
+}
+
 export async function fetchMLProductInfo(url: string): Promise<MLProductInfo | null> {
   let resolved = url
   if (url.includes('meli.la') || url.includes('ml.bz')) {
     resolved = await expandShortLink(url)
+  }
+
+  if (!isMLProductUrl(resolved)) {
+    console.log(`[ml] URL não é de produto: ${resolved.slice(0, 80)}`)
+    return null
   }
 
   const productId = extractMLProductId(resolved)
