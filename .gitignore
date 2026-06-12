@@ -1,4 +1,35 @@
+# Dependencies
 node_modules/
+
+# Build output
 dist/
+
+# Environment
 .env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Claude / GSD
+.claude/settings.local.json
+.claude/worktrees/
+.planning/
+
+# Project-specific
 data/history.json
+ML-API-DOC/
+cupons shopee/
