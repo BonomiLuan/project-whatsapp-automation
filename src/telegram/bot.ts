@@ -738,7 +738,7 @@ export async function sendDealToChat(deal: UnifiedDeal): Promise<void> {
   const categoryEmoji = CATEGORY_META[deal.category]?.emoji ?? '🛍️'
 
   let dealUrl = deal.affiliateUrl
-  if (deal.productLink) {
+  if (deal.source === 'shopee' && deal.productLink) {
     try {
       const subIds: SubIds = {
         source: 'telegram', trigger: 'auto',
@@ -747,6 +747,10 @@ export async function sendDealToChat(deal: UnifiedDeal): Promise<void> {
       }
       dealUrl = await generateAffiliateLink(deal.productLink, subIds)
     } catch { /* fallback */ }
+  } else if (deal.source === 'amazon') {
+    try {
+      dealUrl = await injectAmazonTag(deal.affiliateUrl)
+    } catch { /* fallback to original affiliateUrl */ }
   }
 
   let shortUrl = dealUrl
@@ -828,6 +832,10 @@ async function sendDealCard(ctx: Ctx, deal: UnifiedDeal) {
       }
       dealUrl = await generateAffiliateLink(deal.productLink, subIds)
     } catch { /* fallback to pre-generated link */ }
+  } else if (deal.source === 'amazon') {
+    try {
+      dealUrl = await injectAmazonTag(deal.affiliateUrl)
+    } catch { /* fallback to original affiliateUrl */ }
   }
 
   dealCardStore.set(deal.id, { ...deal, affiliateUrl: dealUrl })
