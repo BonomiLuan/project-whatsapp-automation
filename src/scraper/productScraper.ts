@@ -142,7 +142,15 @@ export async function scrapeProduct(url: string): Promise<ProductData> {
         } catch { /* skip */ }
       }
 
-      // 4. Generic DOM selectors (Amazon, Americanas, etc.)
+      // 4. ML price: <meta itemprop="price" content="20.90"> inside .ui-pdp-price__part
+      const mlPriceEl = document.querySelector<HTMLMetaElement>('.ui-pdp-price__part meta[itemprop="price"]')
+      const mlPrice = mlPriceEl?.getAttribute('content') || ''
+      const mlOriginalPriceEl = document.querySelector<HTMLMetaElement>(
+        '.ui-pdp-price__original-value meta[itemprop="price"], .andes-money-amount--previous meta[itemprop="price"]',
+      )
+      const mlOriginalPrice = mlOriginalPriceEl?.getAttribute('content') || ''
+
+      // 5. Generic DOM selectors (Amazon, Americanas, etc.)
       const genericTitle = document.querySelector('h1')?.textContent?.trim()
       const genericPrice =
         document.querySelector('[class*="price-current"]')?.textContent?.trim() ||
@@ -153,8 +161,8 @@ export async function scrapeProduct(url: string): Promise<ProductData> {
 
       return {
         name: ssrName || ldName || ogTitle || genericTitle || '',
-        price: ldPrice || genericPrice || '',
-        originalPrice: genericOriginalPrice || '',
+        price: mlPrice || ldPrice || genericPrice || '',
+        originalPrice: mlOriginalPrice || genericOriginalPrice || '',
         imageUrl: ssrImage || ldImage || ogImage || '',
         discountPercent: ssrDiscount,
       }

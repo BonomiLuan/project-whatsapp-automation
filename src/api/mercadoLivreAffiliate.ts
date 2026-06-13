@@ -1,4 +1,8 @@
 import axios from 'axios'
+import { chromium } from 'playwright-extra'
+import StealthPlugin from 'puppeteer-extra-plugin-stealth'
+
+chromium.use(StealthPlugin())
 
 const PUBLISHER_ID = process.env.ML_PUBLISHER_ID ?? '64897511'
 const MATT_WORD = process.env.ML_MATT_WORD ?? 'mamaeeconomica'
@@ -95,6 +99,16 @@ async function expandShortLink(url: string): Promise<string> {
   } catch {
     return url
   }
+}
+
+export async function resolveMLShortLink(url: string): Promise<string> {
+  if (!url.includes('meli.la') && !url.includes('ml.bz')) return url
+  const resolved = await expandShortLink(url)
+  if (!isMLProductUrl(resolved)) {
+    const productUrl = await resolveMLSocialToProduct(resolved)
+    if (productUrl) return productUrl
+  }
+  return resolved
 }
 
 export async function injectMLTag(url: string): Promise<string> {
@@ -267,6 +281,50 @@ function isMLProductUrl(url: string): boolean {
   } catch { return false }
 }
 
+async function resolveMLSocialToProduct(socialUrl: string): Promise<string | null> {
+  let browser
+  try {
+    browser = await chromium.launch({ headless: true })
+    const page = await browser.newPage()
+    await page.setViewportSize({ width: 1366, height: 768 })
+    await page.goto(socialUrl, { waitUntil: 'domcontentloaded', timeout: 20000 })
+
+    // Wait for the "Ir para produto" link rendered by the SPA
+    try {
+      await page.waitForSelector(
+        'a[class*="action-link"], a[href*="/up/MLBU"], a[href*="item_id"]',
+        { timeout: 10000 },
+      )
+    } catch { /* proceed with whatever is on screen */ }
+
+    const productUrl = await page.evaluate(() => {
+      // 1. Try "Ir para produto" / "action-link" anchors first
+      const actionLinks = Array.from(document.querySelectorAll<HTMLAnchorElement>(
+        'a.poly-component__link--action-link, a[class*="action-link"]',
+      ))
+      const productPattern = /\/up\/MLBU?\d+|\/p\/MLB\d+|item_id.*MLB\d+|wid=MLB\d+/i
+      for (const a of actionLinks) {
+        if (productPattern.test(a.href)) return a.href
+      }
+      // 2. Any anchor with an MLBU/MLB product path
+      const all = Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href]'))
+      return all.find(a => productPattern.test(a.href))?.href ?? null
+    })
+
+    if (productUrl) {
+      console.log(`[ml:social] produto encontrado: ${productUrl.slice(0, 80)}`)
+      return productUrl
+    }
+
+    console.log(`[ml:social] nenhum produto encontrado na página social`)
+  } catch (e) {
+    console.log(`[ml:social] Playwright falhou: ${(e as Error).message}`)
+  } finally {
+    await browser?.close()
+  }
+  return null
+}
+
 export async function fetchMLProductInfo(url: string): Promise<MLProductInfo | null> {
   let resolved = url
   if (url.includes('meli.la') || url.includes('ml.bz')) {
@@ -274,8 +332,18 @@ export async function fetchMLProductInfo(url: string): Promise<MLProductInfo | n
   }
 
   if (!isMLProductUrl(resolved)) {
-    console.log(`[ml] URL não é de produto: ${resolved.slice(0, 80)}`)
-    return null
+    if (url.includes('meli.la') || url.includes('ml.bz')) {
+      console.log(`[ml] link curto resolveu para página não-produto, tentando extrair produto da página social: ${resolved.slice(0, 80)}`)
+      const productUrl = await resolveMLSocialToProduct(resolved)
+      if (productUrl) {
+        resolved = productUrl
+      } else {
+        return null
+      }
+    } else {
+      console.log(`[ml] URL não é de produto: ${resolved.slice(0, 80)}`)
+      return null
+    }
   }
 
   const productId = extractMLProductId(resolved)

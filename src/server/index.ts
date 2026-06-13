@@ -5,7 +5,7 @@ import cron from 'node-cron'
 import rateLimit from 'express-rate-limit'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
-import { createHmac } from 'crypto'
+import { createHmac, createHash } from 'crypto'
 import { scrapeProduct } from '../scraper/productScraper.js'
 import { buildMessagePayload } from '../content/messageBuilder.js'
 import { sendOfferMessage } from '../api/metaClient.js'
@@ -15,7 +15,7 @@ import { fetchShopeeDeals, generateAffiliateLink, CATEGORY_META, type SubIds, ty
 import { fetchMLProductInfo, injectMLTag } from '../api/mercadoLivreAffiliate.js'
 import { quickFetchProduct } from '../scraper/productScraper.js'
 import { createBot, sendProductToChat, sendDealToChat } from '../telegram/bot.js'
-import { initLinksTable, getLink, incrementClick, getLinks, isSsrfAllowed, buildExpiredRedirectUrl, type LinkEntry } from './links.js'
+import { initLinksTable, getLink, getLinkImageData, claimAutoSendSlot, incrementClick, getLinks, isSsrfAllowed, buildExpiredRedirectUrl, type LinkEntry } from './links.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const app = express()
@@ -61,7 +61,9 @@ function buildOGPage(link: LinkEntry, baseUrl: string): string {
   const title = esc(link.title)
   const sourceName = link.source === 'ml' ? 'Mercado Livre' : link.source === 'amazon' ? 'Amazon' : 'Shopee'
   const description = esc(sourceName + ' — Clique para ver a oferta')
+  // og:image: sempre via proxy para evitar bloqueio de hotlinking nas CDNs
   const ogImage = baseUrl + '/img/' + link.code
+  const proxyImage = ogImage
   const ogUrl = baseUrl + '/r/' + link.code
   const sourceColor = link.source === 'amazon' ? '#FF9900' : link.source === 'ml' ? '#FFE600' : '#EE4D2D'
   const sourceBg = link.source === 'amazon' ? '#232F3E' : link.source === 'ml' ? '#3483FA' : '#fff'
@@ -74,8 +76,14 @@ function buildOGPage(link: LinkEntry, baseUrl: string): string {
 <meta property="og:title" content="${title}">
 <meta property="og:description" content="${description}">
 <meta property="og:image" content="${ogImage}">
+<meta property="og:image:secure_url" content="${ogImage}">
+<meta property="og:image:type" content="image/jpeg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="1200">
 <meta property="og:url" content="${ogUrl}">
 <meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="${ogImage}">
 <meta http-equiv="refresh" content="0;url=${link.affiliate_url}">
 <title>${title}</title>
 <style>
@@ -97,7 +105,7 @@ function buildOGPage(link: LinkEntry, baseUrl: string): string {
 </head>
 <body>
 <div class="card">
-  <div class="img-wrap"><img src="${ogImage}" alt="${title}" onerror="this.style.display='none'"></div>
+  <div class="img-wrap"><img src="${proxyImage}" alt="${title}" onerror="this.style.display='none'"></div>
   <div class="body">
     <div class="badge"><span class="badge-dot"></span>${sourceName}</div>
     <h1>${title}</h1>
@@ -229,7 +237,7 @@ export async function refreshDeals() {
       const source: UnifiedDeal['source'] = isML ? 'mercado-livre' : 'amazon'
       if (isML) mlCount++; else amazonCount++
       results.push({
-        id: d.id,
+        id: createHash('sha1').update(d.id).digest('hex').slice(0, 12),
         title: d.title,
         price: d.price,
         discountPercent: d.temperature,
@@ -407,7 +415,7 @@ app.get('/r/:code', redirectLimiter, async (req, res) => {
   }
 })
 
-// GET /img/:code — SSRF-safe image proxy with LRU cache + 24h Cache-Control
+// GET /img/:code — serve stored image bytes first, fall back to proxy
 app.get('/img/:code', async (req, res) => {
   try {
     const code = String(req.params.code)
@@ -417,17 +425,32 @@ app.get('/img/:code', async (req, res) => {
     }
     const link = await getLink(code)
     if (!link) return res.status(404).json({ error: 'Link não encontrado' })
+
+    // Serve from stored bytes (pre-fetched at link creation time — avoids CDN hotlink blocks)
+    const stored = await getLinkImageData(code)
+    if (stored) {
+      lruSet(code, { buffer: stored.buffer, contentType: stored.mime, cachedAt: Date.now() })
+      return res.set('Content-Type', stored.mime).set('Cache-Control', 'public, max-age=86400').send(stored.buffer)
+    }
+
+    // Fallback: proxy the CDN URL (covers old links without stored bytes)
     if (!isSsrfAllowed(link.image_url)) return res.status(403).json({ error: 'Image domain not allowed' })
     try {
+      const imageHost = new URL(link.image_url).hostname
+      const referer = imageHost.includes('amazon') ? 'https://www.amazon.com.br/'
+        : imageHost.includes('pelando') ? 'https://www.pelando.com.br/'
+        : imageHost.includes('mercadolivre') || imageHost.includes('mlstatic') ? 'https://www.mercadolivre.com.br/'
+        : 'https://shopee.com.br/'
       const response = await axios.get(link.image_url, {
         responseType: 'arraybuffer',
         timeout: 8000,
         headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; WhatsApp/2.0)',
-          Referer: 'https://shopee.com.br/',
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          Referer: referer,
         },
       })
       const buffer = Buffer.from(response.data as ArrayBuffer)
+      if (buffer.length < 5000) return res.status(502).json({ error: 'Imagem bloqueada pelo CDN' })
       const contentType = (response.headers['content-type'] as string) || 'image/jpeg'
       lruSet(code, { buffer, contentType, cachedAt: Date.now() })
       return res.set('Content-Type', contentType).set('Cache-Control', 'public, max-age=86400').send(buffer)
@@ -491,6 +514,13 @@ cron.schedule('0 0 * * *', () => {
 const ALL_CATEGORIES = Object.keys(CATEGORY_META) as DealCategory[]
 
 async function sendNextSuggestion() {
+  // Distributed lock: prevents multiple processes (e.g. from hot-reload restarts) from all firing at once
+  const claimed = await claimAutoSendSlot(13)
+  if (!claimed) {
+    console.log('[suggest] Outra instância já enviou recentemente, pulando')
+    return
+  }
+
   const available = dealsCache.filter(d => !sentToday.has(d.id))
   if (!available.length) {
     console.log('[suggest] Todos os produtos já enviados hoje')

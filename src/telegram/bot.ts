@@ -7,9 +7,9 @@ import { buildMessagePayload, fmt } from '../content/messageBuilder.js'
 import { sendOfferMessage } from '../api/metaClient.js'
 import { generateAffiliateLink, fetchShopeeProductByUrl, expandShortLink, CATEGORY_META, type SubIds, type DealCategory } from '../api/shopeeAffiliate.js'
 import { injectAmazonTag, isAmazonUrl } from '../api/amazonAffiliate.js'
-import { injectMLTag, isMercadoLivreUrl, fetchMLProductInfo } from '../api/mercadoLivreAffiliate.js'
+import { injectMLTag, isMercadoLivreUrl, fetchMLProductInfo, resolveMLShortLink } from '../api/mercadoLivreAffiliate.js'
 import { type UnifiedDeal } from '../server/index.js'
-import { createLink } from '../server/links.js'
+import { createLink, cleanupLinks, truncateLinks } from '../server/links.js'
 
 import type { Telegram } from 'telegraf'
 let telegramApi: Telegram | null = null
@@ -215,9 +215,11 @@ const offerWizard = new Scenes.WizardScene<Ctx>(
           `🔗 Tag Amazon adicionada!\n\n⏳ Extraindo dados do produto...`,
         )
       } else if (isML) {
+        // Para meli.la: resolve página social → URL do produto antes de injetar tag
+        const mlUrl = await resolveMLShortLink(text)
         const [affiliateResult, mlInfo] = await Promise.allSettled([
-          injectMLTag(text),
-          fetchMLProductInfo(text),
+          injectMLTag(mlUrl),
+          fetchMLProductInfo(mlUrl),
         ])
         if (affiliateResult.status === 'fulfilled') affiliateUrl = affiliateResult.value
         if (mlInfo.status === 'fulfilled' && mlInfo.value) {
@@ -580,6 +582,34 @@ export function createBot() {
 
   bot.command('cupom', (ctx) => ctx.scene.enter('cupom'))
 
+  bot.command('limpar', async (ctx) => {
+    const arg = ctx.message.text.split(' ')[1]?.toLowerCase()
+    const isTudo = arg === 'tudo'
+    const status = await ctx.reply(isTudo ? '🗑️ Apagando todos os links...' : '🧹 Limpando banco de dados...')
+    try {
+      if (isTudo) {
+        const total = await truncateLinks()
+        await ctx.telegram.editMessageText(
+          ctx.chat!.id, status.message_id, undefined,
+          `✅ Banco zerado!\n📊 ${total} links removidos.`
+        )
+      } else {
+        const result = await cleanupLinks()
+        await ctx.telegram.editMessageText(
+          ctx.chat!.id, status.message_id, undefined,
+          `✅ Banco limpo!\n\n` +
+          `🗑️ Links expirados removidos: ${result.expired}\n` +
+          `🗑️ Links sem clique (>7 dias) removidos: ${result.stale}\n` +
+          `📊 Total removido: ${result.total}\n\n` +
+          `💡 Use /limpar tudo para apagar tudo.`
+        )
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Erro desconhecido'
+      await ctx.telegram.editMessageText(ctx.chat!.id, status.message_id, undefined, `❌ ${msg}`)
+    }
+  })
+
   bot.command('atualizar', async (ctx) => {
     const status = await ctx.reply('🔄 Buscando novas ofertas...')
     try {
@@ -632,7 +662,7 @@ export function createBot() {
   // One command per sub-niche
   const categoryCommands: DealCategory[] = [
     'higiene', 'alimentacao', 'enxoval', 'mobilidade', 'quarto',
-    'brinquedos', 'saude', 'maternidade', 'casa', 'limpeza', 'banho', 'fraldas',
+    'brinquedos', 'saude', 'maternidade', 'casa', 'limpeza', 'banho', 'fraldas', 'decoracao',
   ]
   for (const cat of categoryCommands) {
     bot.command(cat, (ctx) => sendCategoryDeals(ctx, cat))
@@ -682,6 +712,7 @@ export function createBot() {
       }
 
       console.log(`[wa-button] Enviando para WhatsApp: ${deal.title.slice(0, 40)}`)
+      console.log(`[wa-button] imageUrl: ${deal.imageUrl || '(vazio)'}`)
       await sendOfferMessage(payload)
       console.log(`[wa-button] ✓ Enviado com sucesso`)
 
@@ -720,9 +751,11 @@ export function createBot() {
     { command: 'fraldas', description: `${CATEGORY_META.fraldas.emoji} Kits, trocador, pomada assadura` },
     { command: 'limpeza', description: `${CATEGORY_META.limpeza.emoji} OMO, Ariel, Lysol, Veja` },
     { command: 'casa', description: `${CATEGORY_META.casa.emoji} Panelas, organização, tapetes` },
+    { command: 'decoracao', description: `${CATEGORY_META.decoracao.emoji} Quadros, vasos, espelhos, luminárias` },
     { command: 'amazon', description: '📦 Ofertas Amazon do momento' },
     { command: 'cupom', description: '🎟️ Montar e enviar um cupom Shopee' },
     { command: 'atualizar', description: 'Buscar novas ofertas agora' },
+    { command: 'limpar', description: '🧹 Limpar links expirados do banco' },
     { command: 'ajuda', description: 'Ver todos os comandos' },
   ])
 

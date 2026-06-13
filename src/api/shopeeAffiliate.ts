@@ -30,7 +30,7 @@ async function gql<T>(query: string, variables?: Record<string, unknown>): Promi
 export type DealCategory =
   | 'higiene' | 'alimentacao' | 'enxoval' | 'mobilidade'
   | 'quarto' | 'brinquedos' | 'saude' | 'maternidade'
-  | 'casa' | 'limpeza' | 'banho' | 'fraldas' | 'geral'
+  | 'casa' | 'limpeza' | 'banho' | 'fraldas' | 'decoracao' | 'geral'
 
 export interface ShopeeProduct {
   itemId: number
@@ -64,6 +64,7 @@ export const CATEGORY_META: Record<DealCategory, { emoji: string; label: string 
   limpeza:     { emoji: '🧹', label: 'Limpeza' },
   banho:       { emoji: '🛁', label: 'Banho Bebê' },
   fraldas:     { emoji: '🍼', label: 'Fraldas' },
+  decoracao:   { emoji: '🖼️', label: 'Decoração' },
   geral:       { emoji: '🛍️', label: 'Geral' },
 }
 
@@ -118,6 +119,16 @@ const CATEGORY_KEYWORDS: Partial<Record<DealCategory, string[]>> = {
     'fralda de piscina bebê', 'fralda piscina huggies little swimmers',
     'fralda premium bebê', 'fralda ultrafina premium', 'fralda mamypoko pants',
     'kit fralda pampers rn', 'fralda babysec premium', 'fralda turma da monica',
+  ],
+  decoracao: [
+    'quadro decorativo sala', 'quadro decorativo quarto', 'quadro decorativo cozinha',
+    'vaso decorativo sala', 'vaso de plantas decorativo', 'vaso cerâmica decoração',
+    'espelho decorativo parede', 'espelho redondo decorativo',
+    'porta-retrato parede', 'moldura para quadro',
+    'luminária decorativa', 'abajur decorativo',
+    'enfeite de mesa sala', 'escultura decorativa',
+    'tapete decorativo sala', 'almofada decorativa sofá',
+    'arranjo artificial flores', 'planta artificial decoração',
   ],
   limpeza: [
     'sabão em pó omo', 'sabão em pó ariel', 'sabão em pó brilhante', 'sabão em pó ypê',
