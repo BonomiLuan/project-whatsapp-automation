@@ -387,11 +387,23 @@ export async function fetchDeals(): Promise<PelandoDeal[]> {
     for (const categoryUrl of CATEGORIES) {
       try {
         await page.goto(categoryUrl, { waitUntil: 'domcontentloaded', timeout: 45000 })
+
+        // Cloudflare JS challenge — StealthPlugin executes the proof-of-work and page redirects back
+        if (/just a moment|checking your browser|attention required/i.test(await page.title())) {
+          console.log(`[pelando] Aguardando resolução de challenge Cloudflare para ${categoryUrl.split('/').pop()}...`)
+          try {
+            await page.waitForURL(url => !url.toString().includes('__cf_chl'), { timeout: 35000 })
+            await page.waitForLoadState('domcontentloaded', { timeout: 15000 })
+          } catch {
+            console.log(`[pelando] Challenge Cloudflare não resolvido em ${categoryUrl} — IP bloqueado`)
+            continue
+          }
+        }
+
         const pageTitle = await page.title()
-        const pageUrl = page.url()
-        console.log(`[pelando] página carregada: "${pageTitle}" | url: ${pageUrl}`)
+        console.log(`[pelando] página carregada: "${pageTitle}"`)
         if (/cloudflare|just a moment|checking your browser|attention required/i.test(pageTitle)) {
-          console.log(`[pelando] BLOQUEADO por Cloudflare em ${categoryUrl} — título: "${pageTitle}"`)
+          console.log(`[pelando] BLOQUEADO por Cloudflare (hard block) em ${categoryUrl}`)
           continue
         }
         await page.waitForSelector('[class*="deal-card-stamp"]', { timeout: 20000 })
