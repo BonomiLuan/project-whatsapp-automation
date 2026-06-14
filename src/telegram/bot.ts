@@ -9,7 +9,7 @@ import { generateAffiliateLink, fetchShopeeProductByUrl, expandShortLink, CATEGO
 import { injectAmazonTag, isAmazonUrl } from '../api/amazonAffiliate.js'
 import { injectMLTag, isMercadoLivreUrl, fetchMLProductInfo, resolveMLShortLink } from '../api/mercadoLivreAffiliate.js'
 import { type UnifiedDeal } from '../server/index.js'
-import { createLink, cleanupLinks, truncateLinks } from '../server/links.js'
+import { createLink, cleanupLinks, truncateLinks, markDealVote } from '../server/links.js'
 
 import type { Telegram } from 'telegraf'
 let telegramApi: Telegram | null = null
@@ -572,6 +572,7 @@ export function createBot() {
     '/amazon — 📦 Ofertas Amazon do momento',
     '/cupom — 🎟️ Montar e enviar um cupom Shopee',
     '/atualizar — buscar novas ofertas agora',
+    '/feedback — ver resumo de curtidas e irrelevantes',
     '/ajuda — mostrar esta mensagem',
     '',
     '🔗 Ou mande qualquer link de produto e eu monto a oferta com link de afiliado.',
@@ -611,10 +612,10 @@ export function createBot() {
   })
 
   bot.command('atualizar', async (ctx) => {
-    const status = await ctx.reply('🔄 Buscando novas ofertas...')
+    const status = await ctx.reply('🔄 Buscando novas ofertas (Shopee + Pelando)...')
     try {
-      const { refreshDeals, getCachedDeals } = await import('../server/index.js')
-      await refreshDeals()
+      const { refreshDeals, monitorPelando, getCachedDeals } = await import('../server/index.js')
+      await Promise.all([refreshDeals(), monitorPelando()])
       const count = getCachedDeals().length
       await ctx.telegram.editMessageText(
         ctx.chat!.id, status.message_id, undefined,
@@ -730,6 +731,79 @@ export function createBot() {
     }
   })
 
+  // Feedback: 👍 / 👎 nas ofertas
+  bot.action(/^fb:(like|dislike):(.+)$/, async (ctx) => {
+    const vote   = ctx.match[1]
+    const dealId = ctx.match[2]
+    await ctx.answerCbQuery(vote === 'like' ? '👍 Obrigada pelo feedback!' : '👎 Feedback registrado!')
+
+    const deal = dealCardStore.get(dealId)
+    if (!deal) return
+
+    const entry = feedbackStore.get(dealId) ?? { likes: 0, dislikes: 0, title: deal.title, category: deal.category }
+    if (vote === 'like') entry.likes++
+    else entry.dislikes++
+    feedbackStore.set(dealId, entry)
+
+    markDealVote(dealId, vote as 'like' | 'dislike', deal.title, deal.category).catch(() => {})
+
+    try {
+      await ctx.editMessageReplyMarkup(dealButtons(dealId, deal.affiliateUrl, entry).reply_markup)
+    } catch { /* mensagem antiga demais */ }
+  })
+
+  bot.command('feedback', async (ctx) => {
+    if (feedbackStore.size === 0) {
+      await ctx.reply('📊 Nenhum feedback ainda. Vote nas ofertas com 👍 ou 👎.')
+      return
+    }
+
+    const entries = [...feedbackStore.values()]
+    const totalLikes    = entries.reduce((s, e) => s + e.likes, 0)
+    const totalDislikes = entries.reduce((s, e) => s + e.dislikes, 0)
+
+    const catStats = new Map<string, { likes: number; dislikes: number }>()
+    for (const e of entries) {
+      const s = catStats.get(e.category) ?? { likes: 0, dislikes: 0 }
+      s.likes += e.likes
+      s.dislikes += e.dislikes
+      catStats.set(e.category, s)
+    }
+
+    const topGood = entries.filter(e => e.likes > 0).sort((a, b) => b.likes - a.likes).slice(0, 5)
+    const topBad  = entries.filter(e => e.dislikes > 0).sort((a, b) => b.dislikes - a.dislikes).slice(0, 5)
+
+    const lines = [
+      `📊 <b>Feedback das Ofertas</b>`,
+      ``,
+      `👍 Curtidas: ${totalLikes}   👎 Irrelevantes: ${totalDislikes}`,
+      ``,
+    ]
+
+    if (topGood.length > 0) {
+      lines.push(`<b>✅ Mais curtidas:</b>`)
+      for (const e of topGood) lines.push(`  👍 ${e.likes}× — ${e.title.slice(0, 45)}`)
+      lines.push(``)
+    }
+
+    if (topBad.length > 0) {
+      lines.push(`<b>❌ Mais irrelevantes:</b>`)
+      for (const e of topBad) lines.push(`  👎 ${e.dislikes}× — ${e.title.slice(0, 45)}`)
+      lines.push(``)
+    }
+
+    if (catStats.size > 0) {
+      lines.push(`<b>📂 Por categoria:</b>`)
+      const sorted = [...catStats.entries()].sort((a, b) => b[1].dislikes - a[1].dislikes)
+      for (const [cat, s] of sorted) {
+        const emoji = CATEGORY_META[cat as DealCategory]?.emoji ?? '🏷️'
+        lines.push(`  ${emoji} ${cat}: 👍 ${s.likes} · 👎 ${s.dislikes}`)
+      }
+    }
+
+    await ctx.reply(lines.join('\n'), { parse_mode: 'HTML' })
+  })
+
   bot.hears(/https?:\/\//, (ctx) => ctx.scene.enter('offer'))
 
   bot.launch().catch((err: Error) => {
@@ -756,6 +830,7 @@ export function createBot() {
     { command: 'cupom', description: '🎟️ Montar e enviar um cupom Shopee' },
     { command: 'atualizar', description: 'Buscar novas ofertas agora' },
     { command: 'limpar', description: '🧹 Limpar links expirados do banco' },
+    { command: 'feedback', description: '📊 Ver resumo de curtidas e irrelevantes' },
     { command: 'ajuda', description: 'Ver todos os comandos' },
   ])
 
@@ -813,10 +888,7 @@ export async function sendDealToChat(deal: UnifiedDeal): Promise<void> {
 
   dealCardStore.set(deal.id, { ...deal, affiliateUrl: dealUrl })
 
-  const waButton = Markup.inlineKeyboard([[
-    Markup.button.url('🛒 Abrir oferta', dealUrl),
-    Markup.button.callback('📲 WhatsApp', `wa:${deal.id}`),
-  ]])
+  const waButton = dealButtons(deal.id, dealUrl)
 
   for (let i = 0; i < chatIds.length; i++) {
     if (i > 0) await new Promise(r => setTimeout(r, 60_000))
@@ -862,6 +934,24 @@ export async function sendProductToChat(
 // Stores deals shown in cards so the WhatsApp callback can find them
 const dealCardStore = new Map<string, UnifiedDeal>()
 
+interface FeedbackEntry { likes: number; dislikes: number; title: string; category: string }
+const feedbackStore = new Map<string, FeedbackEntry>()
+
+function dealButtons(dealId: string, dealUrl: string, fb?: FeedbackEntry) {
+  const likeLabel  = fb ? `👍 (${fb.likes})`    : '👍 Boa oferta'
+  const dislikeLabel = fb ? `👎 (${fb.dislikes})` : '👎 Irrelevante'
+  return Markup.inlineKeyboard([
+    [
+      Markup.button.url('🛒 Abrir oferta', dealUrl),
+      Markup.button.callback('📲 WhatsApp', `wa:${dealId}`),
+    ],
+    [
+      Markup.button.callback(likeLabel, `fb:like:${dealId}`),
+      Markup.button.callback(dislikeLabel, `fb:dislike:${dealId}`),
+    ],
+  ])
+}
+
 async function sendDealCard(ctx: Ctx, deal: UnifiedDeal) {
   const isShopee = deal.source === 'shopee'
 
@@ -901,10 +991,7 @@ async function sendDealCard(ctx: Ctx, deal: UnifiedDeal) {
     groupUrl,
   })
 
-  const buttons = Markup.inlineKeyboard([[
-    Markup.button.url('🛒 Abrir oferta', dealUrl),
-    Markup.button.callback('📲 WhatsApp', `wa:${deal.id}`),
-  ]])
+  const buttons = dealButtons(deal.id, dealUrl)
 
   try {
     if (deal.imageUrl) {
@@ -918,6 +1005,71 @@ async function sendDealCard(ctx: Ctx, deal: UnifiedDeal) {
 }
 
 export { sendDealCard }
+
+function getCouponStoreUrl(store: string): { url: string; label: string } | null {
+  const s = store.toLowerCase()
+  const amazonTag = process.env.AMAZON_ASSOCIATE_TAG ?? 'thaisbonomi-20'
+  const mlPublisher = process.env.ML_PUBLISHER_ID ?? '64897511'
+  const mlWord = process.env.ML_MATT_WORD ?? 'mamaeeconomica'
+
+  if (s.includes('amazon')) {
+    return { url: `https://www.amazon.com.br/?tag=${amazonTag}`, label: '🛒 Comprar na Amazon' }
+  }
+  if (s.includes('mercado')) {
+    return { url: `https://www.mercadolivre.com.br/?matt_tool=${mlPublisher}&matt_word=${mlWord}`, label: '🛒 Comprar no Mercado Livre' }
+  }
+  if (s.includes('shopee')) {
+    return { url: `https://shopee.com.br/`, label: '🛒 Comprar na Shopee' }
+  }
+  return null
+}
+
+export async function sendPelandoCouponToChat(deal: import('../content/pelando.js').PelandoDeal): Promise<void> {
+  const chatIds = getTargetChatIds()
+  if (!telegramApi || chatIds.length === 0) throw new Error('Bot não configurado')
+
+  const groupUrl = process.env.WHATSAPP_GROUP_URL || ''
+  const storeName = deal.store || 'Pelando'
+  const storeLink = getCouponStoreUrl(storeName)
+
+  const message = [
+    `🎟️ <b>CUPOM ENCONTRADO NO PELANDO!</b>`,
+    ``,
+    `📦 ${esc(deal.title.slice(0, 60))}`,
+    `🏪 ${esc(storeName)}`,
+    `💰 <b>${esc(deal.price)}</b>`,
+    ``,
+    `📋 Código: <code>${esc(deal.couponCode || '')}</code>`,
+    ``,
+    storeLink
+      ? `🛒 Acesse a loja, aplique o cupom e economize!`
+      : `🔗 Ver no Pelando:\n${deal.dealUrl}`,
+    groupUrl ? `\n💚 Grupo:\n${groupUrl}` : '',
+    ``,
+    `#Cupom #MamãeEconômica`,
+  ].filter(Boolean).join('\n')
+
+  const buttons = Markup.inlineKeyboard([
+    [
+      storeLink
+        ? Markup.button.url(storeLink.label, storeLink.url)
+        : Markup.button.url('🎟️ Ver cupom', deal.dealUrl),
+      Markup.button.url('📋 Ver no Pelando', deal.dealUrl),
+    ],
+  ])
+
+  for (let i = 0; i < chatIds.length; i++) {
+    if (i > 0) await new Promise(r => setTimeout(r, 60_000))
+    const id = chatIds[i]
+    if (deal.imageUrl) {
+      try {
+        await telegramApi!.sendPhoto(id, deal.imageUrl, { caption: message, parse_mode: 'HTML', ...buttons })
+        continue
+      } catch { /* fallback */ }
+    }
+    await telegramApi!.sendMessage(id, message, { parse_mode: 'HTML', ...buttons })
+  }
+}
 
 function esc(text: string): string {
   return text.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c] || c))

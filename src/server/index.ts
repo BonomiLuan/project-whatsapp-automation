@@ -15,7 +15,7 @@ import { fetchShopeeDeals, generateAffiliateLink, CATEGORY_META, type SubIds, ty
 import { fetchMLProductInfo, injectMLTag } from '../api/mercadoLivreAffiliate.js'
 import { quickFetchProduct } from '../scraper/productScraper.js'
 import { createBot, sendProductToChat, sendDealToChat } from '../telegram/bot.js'
-import { initLinksTable, getLink, getLinkImageData, claimAutoSendSlot, incrementClick, getLinks, isSsrfAllowed, buildExpiredRedirectUrl, type LinkEntry } from './links.js'
+import { initLinksTable, getLink, getLinkImageData, claimAutoSendSlot, incrementClick, getLinks, isSsrfAllowed, buildExpiredRedirectUrl, recordDealSent, getExcludedDealIds, type LinkEntry } from './links.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const app = express()
@@ -191,11 +191,14 @@ export interface UnifiedDeal {
 let dealsCache: UnifiedDeal[] = []
 let sentTodayLog: (UnifiedDeal & { sentAt: string })[] = []
 
-export async function refreshDeals() {
-  const results: UnifiedDeal[] = []
-  const now = new Date().toISOString()
+// Tracks Pelando deal IDs already processed — prevents sending the same coupon twice
+const seenPelandoIds = new Set<string>()
 
-  // Primary: Shopee Affiliate API
+export async function refreshDeals() {
+  const now = new Date().toISOString()
+  const shopeeResults: UnifiedDeal[] = []
+
+  // Shopee Affiliate API only — Pelando is handled by monitorPelando()
   if (process.env.SHOPEE_APP_ID && process.env.SHOPEE_SECRET) {
     try {
       const shopeeProducts = await fetchShopeeDeals(12)
@@ -204,7 +207,7 @@ export async function refreshDeals() {
         const originalNum = p.priceDiscountRate > 0
           ? priceNum / (1 - p.priceDiscountRate / 100)
           : undefined
-        results.push({
+        shopeeResults.push({
           id: String(p.itemId),
           title: p.productName.slice(0, 80),
           price: `R$${priceNum.toFixed(2).replace('.', ',')}`,
@@ -221,22 +224,44 @@ export async function refreshDeals() {
           publishedAt: now,
         })
       }
-      console.log(`[shopee] ✓ ${results.length} produtos encontrados`)
+      console.log(`[shopee] ✓ ${shopeeResults.length} produtos encontrados`)
     } catch (err) {
       console.error('[shopee] Erro:', err instanceof Error ? err.message : err)
     }
   }
 
-  // Amazon + Mercado Livre via Pelando
+  // Rebuild cache: keep Pelando deals, replace Shopee
+  const pelandoDeals = dealsCache.filter(d => d.source === 'amazon' || d.source === 'mercado-livre')
+  dealsCache = [...pelandoDeals, ...shopeeResults]
+}
+
+export async function monitorPelando(): Promise<void> {
+  console.log('[pelando:monitor] Verificando novos deals e cupons...')
   try {
     const pelandoDeals = await fetchPelandoDeals()
+    const now = new Date().toISOString()
+
+    const freshDeals: UnifiedDeal[] = []
+    const newCoupons: import('../content/pelando.js').PelandoDeal[] = []
     let amazonCount = 0, mlCount = 0
+
     for (const d of pelandoDeals) {
+      const isNew = !seenPelandoIds.has(d.id)
+      seenPelandoIds.add(d.id)
+
+      if (d.couponCode) {
+        if (isNew) newCoupons.push(d)
+        continue  // coupons don't go into dealsCache
+      }
+
+      // Regular deal → add to cache
       const storeLower = d.store.toLowerCase()
-      const isML = storeLower.includes('mercado') || storeLower.includes('mercadolivre') || storeLower === 'ml'
-      const source: UnifiedDeal['source'] = isML ? 'mercado-livre' : 'amazon'
-      if (isML) mlCount++; else amazonCount++
-      results.push({
+      const isShopee = storeLower.includes('shopee')
+      const isML = !isShopee && (storeLower.includes('mercado') || storeLower.includes('mercadolivre') || storeLower === 'ml')
+      const source: UnifiedDeal['source'] = isShopee ? 'shopee' : isML ? 'mercado-livre' : 'amazon'
+      if (isML) mlCount++; else if (!isShopee) amazonCount++
+
+      freshDeals.push({
         id: createHash('sha1').update(d.id).digest('hex').slice(0, 12),
         title: d.title,
         price: d.price,
@@ -246,15 +271,30 @@ export async function refreshDeals() {
         affiliateUrl: d.dealUrl,
         source,
         category: 'geral',
-        publishedAt: d.publishedAt,
+        publishedAt: now,
       })
     }
-    console.log(`[pelando] ✓ ${amazonCount} Amazon + ${mlCount} Mercado Livre`)
-  } catch (err) {
-    console.error('[pelando] Erro:', err instanceof Error ? err.message : err)
-  }
 
-  dealsCache = results
+    // Replace Pelando portion of cache with fresh data
+    const shopeeDeals = dealsCache.filter(d => d.source === 'shopee')
+    dealsCache = [...shopeeDeals, ...freshDeals]
+    console.log(`[pelando:monitor] ✓ ${amazonCount} Amazon + ${mlCount} ML | ${newCoupons.length} cupons novos`)
+
+    // Send new coupons immediately
+    if (newCoupons.length > 0) {
+      const { sendPelandoCouponToChat } = await import('../telegram/bot.js')
+      for (const coupon of newCoupons) {
+        try {
+          await sendPelandoCouponToChat(coupon)
+          console.log(`[pelando:monitor] ✓ Cupom enviado: ${coupon.couponCode} — ${coupon.store}`)
+        } catch (err) {
+          console.error(`[pelando:monitor] Erro ao enviar cupom:`, err instanceof Error ? err.message : err)
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[pelando:monitor] Erro:', err instanceof Error ? err.message : err)
+  }
 }
 
 export function getCachedDeals() {
@@ -521,7 +561,9 @@ async function sendNextSuggestion() {
     return
   }
 
-  const available = dealsCache.filter(d => !sentToday.has(d.id))
+  const dbExcluded = await getExcludedDealIds(7)
+  const excluded = new Set([...sentToday, ...dbExcluded])
+  const available = dealsCache.filter(d => !excluded.has(d.id))
   if (!available.length) {
     console.log('[suggest] Todos os produtos já enviados hoje')
     return
@@ -559,6 +601,7 @@ async function sendNextSuggestion() {
     lastSentSource = deal.source
     sentTodayLog.push({ ...deal, sentAt: new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) })
     dealsCache = dealsCache.filter(d => d.id !== deal!.id)
+    recordDealSent(deal.id, deal.title, deal.category).catch(() => {})
     console.log(`[suggest] ✓ [${deal.source}] ${deal.category} — ${deal.title.slice(0, 40)}`)
   } catch (err) {
     console.error('[suggest] Erro:', err instanceof Error ? err.message : err)
@@ -569,11 +612,13 @@ app.listen(PORT, () => {
   console.log(`\n✅ Servidor rodando em http://localhost:${PORT}`)
   createBot()
   refreshDeals()
+  monitorPelando()
   const baseUrl = process.env.BASE_URL || ''
   if (!baseUrl || baseUrl.includes('localhost')) {
     console.warn('[links] ⚠️  BASE_URL não configurado ou é localhost — links curtos não vão funcionar em produção')
   }
   initLinksTable().catch(console.error)
   cron.schedule('*/30 * * * *', refreshDeals, { timezone: 'America/Sao_Paulo' })
+  cron.schedule('*/30 * * * *', monitorPelando, { timezone: 'America/Sao_Paulo' })
   cron.schedule('*/15 7-22 * * *', sendNextSuggestion, { timezone: 'America/Sao_Paulo' })
 })

@@ -174,6 +174,16 @@ export async function initLinksTable(): Promise<void> {
     await pool.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_links_affiliate_url ON links(affiliate_url)
     `)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS deal_history (
+        deal_id   TEXT        PRIMARY KEY,
+        title     TEXT        NOT NULL DEFAULT '',
+        category  TEXT        NOT NULL DEFAULT '',
+        vote      TEXT,
+        sent_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        voted_at  TIMESTAMPTZ
+      )
+    `)
     console.log('[links] ✅ Tabela de links pronta (Railway Postgres conectado)')
   } catch (err) {
     console.error('[links] ❌ Falha ao conectar/criar tabela:', err)
@@ -337,4 +347,53 @@ export async function cleanupLinks(): Promise<{ expired: number; stale: number; 
 export async function truncateLinks(): Promise<number> {
   const { rows } = await pool.query(`DELETE FROM links RETURNING code`)
   return rows.length
+}
+
+// ---------------------------------------------------------------------------
+// Deal history — evita repetição e respeita feedback negativo
+// ---------------------------------------------------------------------------
+
+export async function recordDealSent(dealId: string, title: string, category: string): Promise<void> {
+  if (!process.env.DATABASE_URL) return
+  try {
+    await pool.query(`
+      INSERT INTO deal_history (deal_id, title, category, sent_at)
+      VALUES ($1, $2, $3, NOW())
+      ON CONFLICT (deal_id) DO UPDATE
+        SET sent_at = EXCLUDED.sent_at,
+            title   = EXCLUDED.title,
+            category = EXCLUDED.category
+        WHERE deal_history.vote IS DISTINCT FROM 'dislike'
+    `, [dealId, title, category])
+  } catch (err) {
+    console.error('[links] recordDealSent error:', err)
+  }
+}
+
+export async function markDealVote(dealId: string, vote: 'like' | 'dislike', title = '', category = ''): Promise<void> {
+  if (!process.env.DATABASE_URL) return
+  try {
+    await pool.query(`
+      INSERT INTO deal_history (deal_id, title, category, vote, voted_at)
+      VALUES ($1, $2, $3, $4, NOW())
+      ON CONFLICT (deal_id) DO UPDATE
+        SET vote = $4, voted_at = NOW()
+    `, [dealId, title, category, vote])
+  } catch (err) {
+    console.error('[links] markDealVote error:', err)
+  }
+}
+
+export async function getExcludedDealIds(lookbackDays: number): Promise<Set<string>> {
+  if (!process.env.DATABASE_URL) return new Set()
+  try {
+    const { rows } = await pool.query(`
+      SELECT deal_id FROM deal_history
+      WHERE vote = 'dislike'
+         OR sent_at > NOW() - ($1::integer * INTERVAL '1 day')
+    `, [lookbackDays])
+    return new Set(rows.map(r => r.deal_id as string))
+  } catch {
+    return new Set()
+  }
 }
