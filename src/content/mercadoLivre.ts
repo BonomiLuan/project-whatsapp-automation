@@ -10,8 +10,8 @@ const MIN_DISCOUNT_PERCENT = 15
 // Páginas do site ML que listam produtos em oferta
 const ML_PAGES = [
   'https://www.mercadolivre.com.br/ofertas',
-  'https://www.mercadolivre.com.br/bebes/puericultura/_Desde_1_NoIndex_True',
-  'https://www.mercadolivre.com.br/casa-jardim-e-decoracao/_Desde_1_NoIndex_True',
+  'https://www.mercadolivre.com.br/ofertas/bebes',
+  'https://www.mercadolivre.com.br/ofertas/casa-e-jardim',
 ]
 
 const KEYWORD_MAP: [string, DealCategory][] = [
@@ -122,10 +122,12 @@ export async function fetchMLCategoryDeals(limit = 60): Promise<MLCategoryDeal[]
             const priceCents = card.querySelector('[class*="price-tag-cents"], [class*="andes-money-amount__cents"]')?.textContent?.replace(/\D/g, '') ?? '00'
             const price = priceFrac ? parseFloat(`${priceFrac}.${priceCents.padEnd(2, '0')}`) : 0
 
-            // Preço original (riscado)
-            const origParent = card.querySelector('[class*="original-value"], [class*="price-tag--del"], [class*="price-tag-amount--through"]')
-            const origFrac = origParent?.querySelector('[class*="fraction"]')?.textContent?.replace(/\D/g, '') ?? ''
-            const origCents = origParent?.querySelector('[class*="cents"]')?.textContent?.replace(/\D/g, '') ?? '00'
+            // Preço original (riscado) — poly-card usa andes-money-amount--previous / poly-price__original
+            const origParent = card.querySelector(
+              '[class*="poly-price__original"], [class*="andes-money-amount--previous"], s[class*="andes-money-amount"], [class*="original-value"], [class*="price-tag--del"], [class*="price-tag-amount--through"]'
+            )
+            const origFrac = origParent?.querySelector('[class*="andes-money-amount__fraction"], [class*="fraction"]')?.textContent?.replace(/\D/g, '') ?? ''
+            const origCents = origParent?.querySelector('[class*="andes-money-amount__cents"], [class*="cents"]')?.textContent?.replace(/\D/g, '') ?? '00'
             const original = origFrac ? parseFloat(`${origFrac}.${origCents.padEnd(2, '0')}`) : 0
 
             // Imagem
