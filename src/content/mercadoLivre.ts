@@ -1,120 +1,49 @@
-import axios from 'axios'
+import { chromium } from 'playwright-extra'
+import StealthPlugin from 'puppeteer-extra-plugin-stealth'
 import { injectMLTag } from '../api/mercadoLivreAffiliate.js'
 import type { DealCategory } from '../api/shopeeAffiliate.js'
 
-const ML_API = 'https://api.mercadolibre.com'
-const ML_PUBLIC_HEADERS = {
-  Accept: 'application/json',
-  'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-}
+chromium.use(StealthPlugin())
 
 const MIN_DISCOUNT_PERCENT = 15
 
-// Baseado no que as mães mais buscam — uma query por nicho
-const ML_SEARCHES: { query: string; label: string; defaultCategory: DealCategory }[] = [
-  // Bebê essenciais
-  { query: 'fraldas descartáveis bebê',              label: 'Fraldas',         defaultCategory: 'fraldas' },
-  { query: 'babá eletrônica termômetro esterilizador', label: 'Bebê Essenciais', defaultCategory: 'maternidade' },
-  { query: 'almofada amamentação sling',              label: 'Maternidade',     defaultCategory: 'maternidade' },
-  { query: 'lenço umedecido creme assaduras',         label: 'Higiene Bebê',    defaultCategory: 'higiene' },
-
-  // Roupas / enxoval
-  { query: 'conjunto roupa menino tênis infantil',    label: 'Roupa Menino',    defaultCategory: 'enxoval' },
-  { query: 'vestido infantil sapatilha menina',       label: 'Roupa Menina',    defaultCategory: 'enxoval' },
-  { query: 'pijama infantil body kit bebê',           label: 'Enxoval Bebê',    defaultCategory: 'enxoval' },
-
-  // Brinquedos
-  { query: 'tapete atividades brinquedo bebê educativo', label: 'Brinquedos',   defaultCategory: 'brinquedos' },
-  { query: 'boneca bloco montar mochila escolar',     label: 'Brinquedos Criança', defaultCategory: 'brinquedos' },
-
-  // Banho
-  { query: 'toalha capuz banheira bebê shampoo neutro', label: 'Banho Bebê',   defaultCategory: 'banho' },
-  { query: 'tapete antiderrapante organizador banho', label: 'Acessórios Banho', defaultCategory: 'banho' },
-
-  // Quarto
-  { query: 'protetor berço cortina blackout quarto bebê', label: 'Quarto Bebê', defaultCategory: 'quarto' },
-  { query: 'luminária mesa adesivo parede tapete pelúcia', label: 'Decoração Quarto', defaultCategory: 'quarto' },
-
-  // Limpeza
-  { query: 'aspirador vertical mop microfibra limpeza', label: 'Limpeza',       defaultCategory: 'limpeza' },
-  { query: 'desinfetante sabão roupas tira manchas',  label: 'Produtos Limpeza', defaultCategory: 'limpeza' },
-
-  // Decoração
-  { query: 'quadro decorativo espelho parede manta sofá', label: 'Decoração',   defaultCategory: 'decoracao' },
-  { query: 'organizador armário cesto roupas casa',   label: 'Organização',     defaultCategory: 'casa' },
+// Páginas do site ML que listam produtos em oferta
+const ML_PAGES = [
+  'https://www.mercadolivre.com.br/ofertas',
+  'https://www.mercadolivre.com.br/bebes/puericultura/_Desde_1_NoIndex_True',
+  'https://www.mercadolivre.com.br/casa-jardim-e-decoracao/_Desde_1_NoIndex_True',
 ]
 
 const KEYWORD_MAP: [string, DealCategory][] = [
-  // Fraldas
   ['fralda', 'fraldas'],
   ['lenço umedecido', 'higiene'], ['pomada assadura', 'higiene'], ['creme assadur', 'higiene'],
-  ['escova de dentes infantil', 'higiene'], ['sabonete líquido', 'higiene'], ['cotonete', 'higiene'],
-  ['kit manicure bebê', 'higiene'], ['porta lenço', 'higiene'],
-
-  // Banho
+  ['escova de dentes infantil', 'higiene'], ['sabonete líquido', 'higiene'],
   ['shampoo', 'banho'], ['sabonete', 'banho'], ['toalha capuz', 'banho'], ['banheira', 'banho'],
-  ['tapete antiderrapante', 'banho'], ['esponja', 'banho'], ['roupão', 'banho'],
-
-  // Alimentação
+  ['esponja', 'banho'], ['roupão', 'banho'],
   ['mamadeira', 'alimentacao'], ['chupeta', 'alimentacao'], ['esterilizador', 'alimentacao'],
-  ['cadeirinha refeição', 'alimentacao'], ['prato bebê', 'alimentacao'],
-
-  // Maternidade / bebê
   ['almofada amamentação', 'maternidade'], ['sling', 'maternidade'], ['babá eletrônica', 'maternidade'],
   ['trocador', 'maternidade'], ['amamenta', 'maternidade'],
-
-  // Enxoval / roupas
-  ['body bebê', 'enxoval'], ['manta bebê', 'enxoval'], ['enxoval', 'enxoval'], ['roupinha', 'enxoval'],
+  ['body bebê', 'enxoval'], ['manta bebê', 'enxoval'], ['enxoval', 'enxoval'],
   ['pijama infantil', 'enxoval'], ['conjunto menin', 'enxoval'], ['vestido infantil', 'enxoval'],
-  ['sapatilha', 'enxoval'], ['tênis infantil', 'enxoval'], ['casaco infantil', 'enxoval'],
-
-  // Mobilidade
-  ['carrinho de bebê', 'mobilidade'], ['carrinho', 'mobilidade'], ['bebê conforto', 'mobilidade'],
-  ['bebe conforto', 'mobilidade'], ['mochila de rodinha', 'mobilidade'],
-
-  // Quarto
+  ['sapatilha', 'enxoval'], ['tênis infantil', 'enxoval'],
+  ['carrinho', 'mobilidade'], ['bebê conforto', 'mobilidade'], ['bebe conforto', 'mobilidade'],
   ['berço', 'quarto'], ['berco', 'quarto'], ['cortina blackout', 'quarto'], ['protetor de berço', 'quarto'],
-  ['monitor bebê', 'quarto'], ['tapete de pelúcia', 'quarto'], ['prateleira nicho', 'quarto'],
-
-  // Brinquedos
   ['brinquedo', 'brinquedos'], ['pelúcia', 'brinquedos'], ['boneca', 'brinquedos'],
-  ['bloco de montar', 'brinquedos'], ['jogo de tabuleiro', 'brinquedos'], ['tapete de atividades', 'brinquedos'],
-  ['carrinho de controle', 'brinquedos'], ['fantasia', 'brinquedos'],
-
-  // Saúde
+  ['bloco de montar', 'brinquedos'], ['tapete de atividades', 'brinquedos'],
   ['termômetro', 'saude'], ['aspirador nasal', 'saude'], ['nebulizador', 'saude'],
-
-  // Limpeza
+  ['panela', 'casa'], ['organização', 'casa'], ['cesto', 'casa'], ['tapete', 'casa'],
   ['detergente', 'limpeza'], ['sabão em pó', 'limpeza'], ['desinfetante', 'limpeza'],
-  ['multiuso', 'limpeza'], ['mop', 'limpeza'], ['aspirador', 'limpeza'],
-  ['pano de microfibra', 'limpeza'], ['tira manchas', 'limpeza'],
-
-  // Casa / Organização
-  ['panela', 'casa'], ['organização', 'casa'], ['cesto organizador', 'casa'],
-  ['organizador de armário', 'casa'], ['caixa organizadora', 'casa'],
-
-  // Decoração
-  ['quadro decorativo', 'decoracao'], ['espelho de parede', 'decoracao'], ['luminária', 'decoracao'],
-  ['manta para sofá', 'decoracao'], ['capa de almofada', 'decoracao'], ['luz de fada', 'decoracao'],
-  ['relógio de parede', 'decoracao'], ['vaso de planta', 'decoracao'], ['tapete geométrico', 'decoracao'],
+  ['multiuso', 'limpeza'], ['mop', 'limpeza'], ['aspirador de pó', 'limpeza'],
+  ['quadro decorativo', 'decoracao'], ['espelho', 'decoracao'], ['luminária', 'decoracao'],
+  ['manta para sofá', 'decoracao'],
 ]
 
-function inferCategory(title: string, fallback: DealCategory): DealCategory {
+function inferCategory(title: string): DealCategory {
   const lower = title.toLowerCase()
   for (const [kw, cat] of KEYWORD_MAP) {
     if (lower.includes(kw)) return cat
   }
-  return fallback
-}
-
-interface MLSearchItem {
-  id: string
-  title: string
-  price: number
-  original_price: number | null
-  thumbnail: string
-  permalink: string
-  seller: { nickname: string }
+  return 'geral'
 }
 
 export interface MLCategoryDeal {
@@ -129,84 +58,130 @@ export interface MLCategoryDeal {
 }
 
 export async function fetchMLCategoryDeals(limit = 60): Promise<MLCategoryDeal[]> {
-  const deals: MLCategoryDeal[] = []
-  const seenIds = new Set<string>()
   const t0 = Date.now()
-  let totalFetched = 0
-  let totalWithDiscount = 0
-  let searchErrors = 0
+  let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined
 
-  for (const search of ML_SEARCHES) {
-    try {
-      const { data } = await axios.get(`${ML_API}/sites/MLB/search`, {
-        params: { q: search.query, sort: 'relevance', limit: 50 },
-        headers: ML_PUBLIC_HEADERS,
-        timeout: 15000,
-      })
+  try {
+    browser = await chromium.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+    })
 
-      const items = (data.results ?? []) as MLSearchItem[]
-      totalFetched += items.length
-      let found = 0
-      let withDiscount = 0
+    const context = await browser.newContext({
+      viewport: { width: 1366, height: 768 },
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      locale: 'pt-BR',
+      extraHTTPHeaders: { 'Accept-Language': 'pt-BR,pt;q=0.9' },
+    })
 
-      for (const item of items) {
-        if (seenIds.has(item.id)) continue
-        if (!item.original_price || item.original_price <= item.price) continue
-        withDiscount++
+    const seenIds = new Set<string>()
+    const rawProducts: Array<{ id: string; title: string; price: number; original: number; img: string; url: string }> = []
 
-        const discount = Math.round((1 - item.price / item.original_price) * 100)
-        if (discount < MIN_DISCOUNT_PERCENT) continue
+    for (const pageUrl of ML_PAGES) {
+      const label = pageUrl.replace('https://www.mercadolivre.com.br/', '')
+      const page = await context.newPage()
+      try {
+        console.log(`[ml:playwright] abrindo ${label}...`)
+        const res = await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: 30000 })
+        console.log(`[ml:playwright] HTTP ${res?.status()} | ${label}`)
 
-        seenIds.add(item.id)
-        found++
+        if (!res || res.status() >= 400) {
+          console.log(`[ml:playwright] página inválida, pulando`)
+          await page.close()
+          continue
+        }
 
-        const imageUrl = (item.thumbnail ?? '')
-          .replace('http://', 'https://')
-          .replace(/-I\.(jpg|webp)$/i, '-O.$1')
-        const affiliateUrl = await injectMLTag(item.permalink)
-        const category = inferCategory(item.title, search.defaultCategory)
+        // Aguarda cards aparecerem (até 15s)
+        const cardSelector = '[class*="poly-card"], [class*="ui-search-result"], [class*="shops__item"]'
+        try {
+          await page.waitForSelector(cardSelector, { timeout: 15000 })
+        } catch {
+          console.log(`[ml:playwright] ${label}: nenhum card encontrado após 15s`)
+        }
 
-        deals.push({
-          id: item.id,
-          title: item.title.slice(0, 80),
-          price: `R$${item.price.toFixed(2).replace('.', ',')}`,
-          originalPrice: `R$${item.original_price.toFixed(2).replace('.', ',')}`,
-          discountPercent: discount,
-          imageUrl,
-          affiliateUrl,
-          category,
-        })
+        const found = await page.evaluate((selector) => {
+          const cards = Array.from(document.querySelectorAll(selector))
+          const results: Array<{ id: string; title: string; price: number; original: number; img: string; url: string }> = []
+
+          for (const card of cards) {
+            // URL e ID
+            const anchor = card.querySelector<HTMLAnchorElement>('a[href*="MLB"]') ?? card.querySelector<HTMLAnchorElement>('a[href*="mercadolivre"]')
+            const url = anchor?.href ?? ''
+            const id = url.match(/MLB\d+/)?.[0] ?? card.querySelector('[class*="poly-component__title"]')?.getAttribute('href')?.match(/MLB\d+/)?.[0] ?? ''
+            if (!id) continue
+
+            // Título
+            const title = (
+              card.querySelector('[class*="poly-component__title"]') ??
+              card.querySelector('[class*="item__title"]') ??
+              card.querySelector('h2')
+            )?.textContent?.trim() ?? ''
+
+            // Preço atual (fraction + cents)
+            const priceFrac = card.querySelector('[class*="price-tag-fraction"], [class*="andes-money-amount__fraction"]')?.textContent?.replace(/\D/g, '') ?? ''
+            const priceCents = card.querySelector('[class*="price-tag-cents"], [class*="andes-money-amount__cents"]')?.textContent?.replace(/\D/g, '') ?? '00'
+            const price = priceFrac ? parseFloat(`${priceFrac}.${priceCents.padEnd(2, '0')}`) : 0
+
+            // Preço original (riscado)
+            const origParent = card.querySelector('[class*="original-value"], [class*="price-tag--del"], [class*="price-tag-amount--through"]')
+            const origFrac = origParent?.querySelector('[class*="fraction"]')?.textContent?.replace(/\D/g, '') ?? ''
+            const origCents = origParent?.querySelector('[class*="cents"]')?.textContent?.replace(/\D/g, '') ?? '00'
+            const original = origFrac ? parseFloat(`${origFrac}.${origCents.padEnd(2, '0')}`) : 0
+
+            // Imagem
+            const img = (card.querySelector<HTMLImageElement>('img[src*="mlstatic"], img[src*="http"]')?.src ?? card.querySelector<HTMLImageElement>('img')?.src ?? '').replace('http://', 'https://')
+
+            if (title && price > 0) results.push({ id, title, price, original, img, url })
+          }
+          return results
+        }, cardSelector)
+
+        console.log(`[ml:playwright] ${label}: ${found.length} cards extraídos`)
+        for (const p of found) {
+          if (!seenIds.has(p.id)) { seenIds.add(p.id); rawProducts.push(p) }
+        }
+      } catch (e) {
+        console.error(`[ml:playwright] erro em ${label}: ${(e as Error).message}`)
+      } finally {
+        await page.close()
       }
-
-      totalWithDiscount += found
-      console.log(`[ml:cat] "${search.label}": ${items.length} retornados | ${withDiscount} c/ desconto | ${found} ≥${MIN_DISCOUNT_PERCENT}% (novos)`)
-
-      // Sample dos primeiros 2 deals encontrados nesta query para confirmar relevância
-      const sample = deals.slice(-found).slice(0, 2)
-      for (const d of sample) {
-        console.log(`[ml:cat]   → ${d.discountPercent}% | ${d.category} | ${d.title.slice(0, 55)}`)
-      }
-    } catch (e) {
-      searchErrors++
-      const axErr = e as import('axios').AxiosError
-      const status = axErr.response?.status
-      const body = JSON.stringify(axErr.response?.data ?? {}).slice(0, 200)
-      console.error(`[ml:cat] ERRO "${search.label}": HTTP ${status ?? 'sem resposta'} | ${axErr.message} | body: ${body}`)
     }
+
+    // Filtra por desconto e gera links de afiliado
+    const deals: MLCategoryDeal[] = []
+    let withDiscount = 0
+
+    for (const p of rawProducts) {
+      if (!p.original || p.original <= p.price) continue
+      withDiscount++
+      const discount = Math.round((1 - p.price / p.original) * 100)
+      if (discount < MIN_DISCOUNT_PERCENT) continue
+
+      const affiliateUrl = await injectMLTag(p.url)
+      deals.push({
+        id: p.id,
+        title: p.title.slice(0, 80),
+        price: `R$${p.price.toFixed(2).replace('.', ',')}`,
+        originalPrice: `R$${p.original.toFixed(2).replace('.', ',')}`,
+        discountPercent: discount,
+        imageUrl: p.img,
+        affiliateUrl,
+        category: inferCategory(p.title),
+      })
+    }
+
+    const sorted = deals.sort((a, b) => b.discountPercent - a.discountPercent).slice(0, limit)
+    const byCategory = sorted.reduce<Record<string, number>>((acc, d) => { acc[d.category] = (acc[d.category] ?? 0) + 1; return acc }, {})
+    const elapsed = ((Date.now() - t0) / 1000).toFixed(1)
+
+    console.log(`[ml:playwright] ✓ ${elapsed}s | ${rawProducts.length} extraídos | ${withDiscount} c/ preço original | ${sorted.length} ≥${MIN_DISCOUNT_PERCENT}%`)
+    console.log(`[ml:playwright] categorias: ${Object.entries(byCategory).map(([k, v]) => `${k}:${v}`).join(' | ')}`)
+
+    return sorted
+  } catch (e) {
+    console.error(`[ml:playwright] erro fatal: ${(e as Error).message}`)
+    return []
+  } finally {
+    await browser?.close()
   }
-
-  const elapsed = ((Date.now() - t0) / 1000).toFixed(1)
-  const sorted = deals.sort((a, b) => b.discountPercent - a.discountPercent).slice(0, limit)
-
-  // Breakdown por categoria
-  const byCategory = sorted.reduce<Record<string, number>>((acc, d) => {
-    acc[d.category] = (acc[d.category] ?? 0) + 1
-    return acc
-  }, {})
-  const catSummary = Object.entries(byCategory).map(([k, v]) => `${k}:${v}`).join(' | ')
-
-  console.log(`[ml:cat] ✓ concluído em ${elapsed}s | ${totalFetched} buscados | ${totalWithDiscount} com desconto | ${sorted.length} no cache | erros: ${searchErrors}/${ML_SEARCHES.length}`)
-  console.log(`[ml:cat] categorias: ${catSummary}`)
-
-  return sorted
 }
