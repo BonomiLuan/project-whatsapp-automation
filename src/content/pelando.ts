@@ -362,13 +362,22 @@ const MIN_TEMPERATURE = 20
 const ALLOWED_STORES: string[] = ['amazon', 'mercado livre', 'mercadolivre', 'ml', 'shopee']
 
 export async function fetchDeals(): Promise<PelandoDeal[]> {
-  const browser = await chromium.launch({ headless: true })
+  const browser = await chromium.launch({
+    headless: true,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+    ],
+  })
   const page = await browser.newPage()
 
   await page.setViewportSize({ width: 1366, height: 768 })
   await page.setExtraHTTPHeaders({
-    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Accept-Language': 'pt-BR,pt;q=0.9',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
   })
 
   const allDeals: PelandoDeal[] = []
@@ -377,8 +386,15 @@ export async function fetchDeals(): Promise<PelandoDeal[]> {
   try {
     for (const categoryUrl of CATEGORIES) {
       try {
-        await page.goto(categoryUrl, { waitUntil: 'domcontentloaded', timeout: 30000 })
-        await page.waitForSelector('[class*="deal-card-stamp"]', { timeout: 15000 })
+        await page.goto(categoryUrl, { waitUntil: 'domcontentloaded', timeout: 45000 })
+        const pageTitle = await page.title()
+        const pageUrl = page.url()
+        console.log(`[pelando] página carregada: "${pageTitle}" | url: ${pageUrl}`)
+        if (/cloudflare|just a moment|checking your browser|attention required/i.test(pageTitle)) {
+          console.log(`[pelando] BLOQUEADO por Cloudflare em ${categoryUrl} — título: "${pageTitle}"`)
+          continue
+        }
+        await page.waitForSelector('[class*="deal-card-stamp"]', { timeout: 20000 })
 
         const raw = await page.evaluate(() => {
           const priceEls = Array.from(document.querySelectorAll('[class*="deal-card-stamp"]'))
