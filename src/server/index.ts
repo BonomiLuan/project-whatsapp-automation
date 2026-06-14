@@ -275,9 +275,10 @@ export async function monitorPelando(): Promise<void> {
       })
     }
 
-    // Replace Pelando portion of cache with fresh data
+    // Replace Pelando portion of cache; preserve Shopee and ML API deals
     const shopeeDeals = dealsCache.filter(d => d.source === 'shopee')
-    dealsCache = [...shopeeDeals, ...freshDeals]
+    const mlApiDeals = dealsCache.filter(d => d.source === 'mercado-livre' && !freshDeals.find(f => f.id === d.id))
+    dealsCache = [...shopeeDeals, ...mlApiDeals, ...freshDeals]
     console.log(`[pelando:monitor] ✓ ${amazonCount} Amazon + ${mlCount} ML | ${newCoupons.length} cupons novos`)
 
     // Send new coupons immediately
@@ -294,6 +295,36 @@ export async function monitorPelando(): Promise<void> {
     }
   } catch (err) {
     console.error('[pelando:monitor] Erro:', err instanceof Error ? err.message : err)
+  }
+}
+
+export async function monitorML(): Promise<void> {
+  console.log('[ml:monitor] Buscando deals ML por categoria...')
+  try {
+    const { fetchMLCategoryDeals } = await import('../content/mercadoLivre.js')
+    const mlDeals = await fetchMLCategoryDeals(50)
+    const now = new Date().toISOString()
+
+    const freshDeals: UnifiedDeal[] = mlDeals.map(d => ({
+      id: d.id,
+      title: d.title,
+      price: d.price,
+      originalPrice: d.originalPrice,
+      discountPercent: d.discountPercent,
+      store: 'Mercado Livre',
+      imageUrl: d.imageUrl,
+      affiliateUrl: d.affiliateUrl,
+      source: 'mercado-livre' as const,
+      category: d.category,
+      publishedAt: now,
+    }))
+
+    // Replace ML API deals, preserve Shopee + Amazon/Pelando deals
+    const nonMLDeals = dealsCache.filter(d => d.source !== 'mercado-livre')
+    dealsCache = [...nonMLDeals, ...freshDeals]
+    console.log(`[ml:monitor] ✓ ${freshDeals.length} deals ML no cache`)
+  } catch (err) {
+    console.error('[ml:monitor] Erro:', err instanceof Error ? err.message : err)
   }
 }
 
@@ -613,6 +644,7 @@ app.listen(PORT, () => {
   createBot()
   refreshDeals()
   monitorPelando()
+  monitorML()
   const baseUrl = process.env.BASE_URL || ''
   if (!baseUrl || baseUrl.includes('localhost')) {
     console.warn('[links] ⚠️  BASE_URL não configurado ou é localhost — links curtos não vão funcionar em produção')
@@ -620,5 +652,6 @@ app.listen(PORT, () => {
   initLinksTable().catch(console.error)
   cron.schedule('*/30 * * * *', refreshDeals, { timezone: 'America/Sao_Paulo' })
   cron.schedule('*/30 * * * *', monitorPelando, { timezone: 'America/Sao_Paulo' })
+  cron.schedule('10,40 * * * *', monitorML, { timezone: 'America/Sao_Paulo' })
   cron.schedule('*/15 7-22 * * *', sendNextSuggestion, { timezone: 'America/Sao_Paulo' })
 })

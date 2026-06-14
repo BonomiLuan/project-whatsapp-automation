@@ -612,10 +612,10 @@ export function createBot() {
   })
 
   bot.command('atualizar', async (ctx) => {
-    const status = await ctx.reply('🔄 Buscando novas ofertas (Shopee + Pelando)...')
+    const status = await ctx.reply('🔄 Buscando novas ofertas (Shopee + ML + Pelando)...')
     try {
-      const { refreshDeals, monitorPelando, getCachedDeals } = await import('../server/index.js')
-      await Promise.all([refreshDeals(), monitorPelando()])
+      const { refreshDeals, monitorPelando, monitorML, getCachedDeals } = await import('../server/index.js')
+      await Promise.all([refreshDeals(), monitorPelando(), monitorML()])
       const count = getCachedDeals().length
       await ctx.telegram.editMessageText(
         ctx.chat!.id, status.message_id, undefined,
