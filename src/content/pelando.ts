@@ -1,6 +1,4 @@
 import axios from 'axios'
-import { chromium } from 'playwright-extra'
-import StealthPlugin from 'puppeteer-extra-plugin-stealth'
 import { injectAmazonTag } from '../api/amazonAffiliate.js'
 import { buildMLSearchUrl, injectMLTag } from '../api/mercadoLivreAffiliate.js'
 import { generateAffiliateLink, expandShortLink, type SubIds } from '../api/shopeeAffiliate.js'
@@ -337,7 +335,81 @@ async function resolveCouponCodeFromPelandoPage(dealUrl: string): Promise<string
   return null
 }
 
-chromium.use(StealthPlugin())
+// Astro serializes props as [type, value] tuples: [0, scalar] | [1, array]
+function decodeAstro(v: unknown): unknown {
+  if (Array.isArray(v) && v.length === 2 && typeof v[0] === 'number') {
+    const [type, val] = v as [number, unknown]
+    if (type === 0) return decodeAstro(val)
+    if (type === 1 && Array.isArray(val)) return (val as unknown[]).map(decodeAstro)
+  }
+  if (typeof v === 'object' && v !== null && !Array.isArray(v)) {
+    return Object.fromEntries(
+      Object.entries(v as Record<string, unknown>).map(([k, vv]) => [k, decodeAstro(vv)])
+    )
+  }
+  return v
+}
+
+interface PelandoRawDeal {
+  id: string
+  slug: string
+  title: string
+  temperature: number
+  price: number | null
+  discountPercentage: number | null
+  discountFixed: number | null
+  status: string
+  createdAt: string
+  couponCode?: string | null
+  store: { name: string; slug: string }
+}
+
+const LISTING_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  'Accept-Language': 'pt-BR,pt;q=0.9',
+  'Cache-Control': 'no-cache',
+}
+
+async function fetchCategoryPage(categoryUrl: string): Promise<PelandoRawDeal[]> {
+  const category = categoryUrl.split('/').pop()!
+  try {
+    const res = await axios.get<string>(categoryUrl, {
+      timeout: 25000, responseType: 'text',
+      headers: LISTING_HEADERS,
+      validateStatus: () => true,
+    })
+    const html = res.data as string
+
+    if (/just a moment|um momento|attention required/i.test(html.slice(0, 3000))) {
+      console.log(`[pelando] ${category}: bloqueado por Cloudflare (HTTP ${res.status})`)
+      return []
+    }
+    if (res.status !== 200) {
+      console.log(`[pelando] ${category}: HTTP ${res.status}`)
+      return []
+    }
+
+    const propsMatch = html.match(/component-url="[^"]*CommunityFeedContent[^"]*"[^>]*props="([^"]+)"/)
+    if (!propsMatch) {
+      console.log(`[pelando] ${category}: props não encontrado na página`)
+      return []
+    }
+
+    const jsonStr = propsMatch[1]
+      .replace(/&quot;/g, '"')
+      .replace(/&amp;/g, '&')
+      .replace(/&#39;/g, "'")
+
+    const decoded = decodeAstro(JSON.parse(jsonStr)) as { initialDeals?: PelandoRawDeal[] }
+    const deals = decoded.initialDeals ?? []
+    console.log(`[pelando] ${category}: ${deals.length} deals encontrados`)
+    return deals
+  } catch (e) {
+    console.log(`[pelando] ${category}: erro — ${(e as Error).message}`)
+    return []
+  }
+}
 
 export interface PelandoDeal {
   id: string
@@ -362,265 +434,145 @@ const MIN_TEMPERATURE = 20
 const ALLOWED_STORES: string[] = ['amazon', 'mercado livre', 'mercadolivre', 'ml', 'shopee']
 
 export async function fetchDeals(): Promise<PelandoDeal[]> {
-  const browser = await chromium.launch({
-    headless: true,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-gpu',
-    ],
-  })
-  const page = await browser.newPage()
-
-  await page.setViewportSize({ width: 1366, height: 768 })
-  await page.setExtraHTTPHeaders({
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-  })
-
   const allDeals: PelandoDeal[] = []
   const seen = new Set<string>()
 
-  try {
-    for (const categoryUrl of CATEGORIES) {
-      try {
-        await page.goto(categoryUrl, { waitUntil: 'domcontentloaded', timeout: 45000 })
+  for (const categoryUrl of CATEGORIES) {
+    try {
+      const items = await fetchCategoryPage(categoryUrl)
+      const now = new Date().toISOString()
+      const storesSeen = items.map(i => i.store?.name || '?')
+      console.log(`[pelando] ${categoryUrl.split('/').pop()} — ${items.length} deals, lojas: ${[...new Set(storesSeen)].join(', ')}`)
 
-        // Cloudflare JS challenge — StealthPlugin executes the proof-of-work and page redirects back
-        if (/just a moment|checking your browser|attention required/i.test(await page.title())) {
-          console.log(`[pelando] Aguardando resolução de challenge Cloudflare para ${categoryUrl.split('/').pop()}...`)
-          try {
-            await page.waitForURL(url => !url.toString().includes('__cf_chl'), { timeout: 35000 })
-            await page.waitForLoadState('domcontentloaded', { timeout: 15000 })
-          } catch {
-            console.log(`[pelando] Challenge Cloudflare não resolvido em ${categoryUrl} — IP bloqueado`)
-            continue
+      for (const item of items) {
+        if (!item.title || !item.slug) continue
+        if (item.temperature < MIN_TEMPERATURE) continue
+        if (item.status === 'expired') continue
+
+        const dealPageUrl = `https://www.pelando.com.br/d/${item.slug}`
+        if (seen.has(dealPageUrl)) continue
+
+        const storeName = item.store?.name ?? ''
+        const isCouponDeal = !!(item.couponCode && item.couponCode.length > 0)
+        const isCouponPrice = item.discountPercentage !== null || item.discountFixed !== null
+
+        // Coupon deal — code from props or fallback to detail page
+        if (isCouponPrice || isCouponDeal) {
+          let couponCode = item.couponCode ?? ''
+          if (!couponCode) {
+            console.log(`[pelando:cupom] sem código nos props, buscando na página: ${item.title.slice(0, 60)}`)
+            couponCode = await resolveCouponCodeFromPelandoPage(dealPageUrl) ?? ''
           }
-        }
-
-        const pageTitle = await page.title()
-        console.log(`[pelando] página carregada: "${pageTitle}"`)
-        if (/cloudflare|just a moment|checking your browser|attention required/i.test(pageTitle)) {
-          console.log(`[pelando] BLOQUEADO por Cloudflare (hard block) em ${categoryUrl}`)
-          continue
-        }
-        await page.waitForSelector('[class*="deal-card-stamp"]', { timeout: 20000 })
-
-        const raw = await page.evaluate(() => {
-          const priceEls = Array.from(document.querySelectorAll('[class*="deal-card-stamp"]'))
-          return priceEls.map(priceEl => {
-            let card = priceEl.parentElement
-            for (let i = 0; i < 6; i++) {
-              if (!card) break
-              if (card.querySelector('[class*="deal-card-title"]') && card.querySelector('[class*="deal-card-actions"]')) break
-              card = card.parentElement
-            }
-            if (!card) return null
-
-            const titleEl = card.querySelector('[class*="deal-card-title"] a, [class*="deal-card-title"]')
-            const storeEl = card.querySelector('[class*="deal-card-store"] strong')
-            const actionsText = card.querySelector('[class*="deal-card-actions"]')?.textContent || ''
-            const imgEl = card.querySelector<HTMLImageElement>('img')
-            const linkEl = card.querySelector<HTMLAnchorElement>('a[href*="/d/"]')
-            const tempMatch = actionsText.match(/^(\d+)°/)
-
-            // Detect store via /cupons-de-descontos/STORE link (most reliable)
-            const storeLink = card.querySelector<HTMLAnchorElement>('a[href*="/cupons-de-descontos/"]')
-            const storeFromLink = storeLink?.getAttribute('href')?.split('/cupons-de-descontos/')[1] || ''
-            const storeText = storeEl?.textContent?.trim() || storeFromLink
-
-            // Coupon code extraction — try several selector patterns used by Pelando
-            const COUPON_SELECTORS = [
-              '[class*="coupon-code"]', '[class*="CouponCode"]', '[class*="promo-code"]',
-              '[class*="PromoCode"]', '[class*="discount-code"]', '[data-testid*="coupon"]',
-              '[class*="Coupon"]', '[class*="cupom"]', '[class*="codigo"]',
-            ]
-            const codeEl = card.querySelector(COUPON_SELECTORS.join(', '))
-            const titleText = titleEl?.textContent?.trim() || ''
-            let couponCode = ''
-            let _dbg_codeElClass = ''
-            let _dbg_codeElRaw = ''
-            let _dbg_cardClasses: string[] = []
-            if (codeEl) {
-              const raw = codeEl.textContent?.trim().replace(/\s+/g, '').toUpperCase() || ''
-              _dbg_codeElClass = (codeEl as HTMLElement).className || ''
-              _dbg_codeElRaw = raw
-              const skip = ['COPIAR', 'COPY', 'VER', 'CODIGO', 'CUPOM', 'CODE', 'CLIQUE', 'REVELAR']
-              if (raw.length >= 4 && !skip.includes(raw)) couponCode = raw
-            } else {
-              // Collect suspicious class names to help discover correct selectors
-              const allClasses = [...card.querySelectorAll('*')].flatMap(el => [...(el as HTMLElement).classList]).filter(Boolean)
-              _dbg_cardClasses = [...new Set(allClasses)].filter(c => /code|coupon|promo|cupom|desconto|discount/i.test(c))
-            }
-            // Fallback: extract code from title only when preceded by colon — e.g. "Código: VIRADA20"
-            // Note: NOT matching "Cupom Mercado Livre" (space, not colon) to avoid false positives
-            if (!couponCode) {
-              const m = titleText.match(/(?:c[oó]digo|code)\s*[=:]\s*([A-Z0-9]{4,20})/i)
-              if (m) couponCode = m[1].toUpperCase()
-            }
-            const priceText = priceEl.textContent?.trim() || ''
-            const isCouponPrice = /\d+%\s*off|R\$\s*[\d,.]+\s*off/i.test(priceText)
-
-            return {
-              title: titleEl?.textContent?.trim() || '',
-              price: priceText,
-              store: storeText,
-              temperature: tempMatch ? parseInt(tempMatch[1]) : 0,
-              imageUrl: imgEl?.src || imgEl?.getAttribute('data-src') || '',
-              dealUrl: linkEl?.href?.split('?')[0] || '',
-              couponCode,
-              isCouponPrice,
-              _dbg_codeElClass,
-              _dbg_codeElRaw,
-              _dbg_cardClasses,
-            }
-          }).filter(Boolean)
-        })
-
-        const now = new Date().toISOString()
-        const storesSeen = raw.map(i => i?.store || '(sem loja)').filter(Boolean)
-        console.log(`[pelando] ${categoryUrl.split('/').pop()} — ${raw.length} deals, lojas: ${[...new Set(storesSeen)].join(', ')}`)
-
-        for (const item of raw) {
-          if (!item?.title || !item.dealUrl) continue
-          if (item.temperature < MIN_TEMPERATURE) continue
-          if (seen.has(item.dealUrl)) continue
-
-          // Resolve coupon code — card extraction first, then deal page fallback
-          let couponCode = item.couponCode
-          if (item.isCouponPrice && !couponCode) {
-            console.log(`[pelando:cupom] sem código no card, buscando na página: ${item.title.slice(0, 60)}`)
-            couponCode = await resolveCouponCodeFromPelandoPage(item.dealUrl) ?? ''
-          }
-
-          const isCouponDeal = item.isCouponPrice && couponCode.length > 0
-
-          if (isCouponDeal) {
-            // Mark as seen only after successful resolution
-            seen.add(item.dealUrl)
-            console.log(`[pelando:cupom] ✓ ${couponCode} — ${item.store} — ${item.price}`)
-            allDeals.push({
-              id: item.dealUrl,
-              title: item.title.slice(0, 80),
-              price: formatPrice(item.price),
-              store: item.store,
-              dealUrl: item.dealUrl,
-              imageUrl: item.imageUrl,
-              temperature: item.temperature,
-              publishedAt: now,
-              couponCode,
-            })
-            continue
-          }
-
-          // isCouponPrice but no code found → don't mark seen, retry next cycle
-          if (item.isCouponPrice) continue
-
-          seen.add(item.dealUrl)
-
-          // Regular deal: apply store filter
-          if (ALLOWED_STORES.length > 0) {
-            const storeLower = item.store.toLowerCase()
-            const allowed = ALLOWED_STORES.some(s => storeLower.includes(s))
-            if (!allowed) continue
-          }
-
-          const storeLowerFull = item.store.toLowerCase()
-          const isAmazonDeal = storeLowerFull.includes('amazon')
-          const isMLDeal = storeLowerFull.includes('mercado') || storeLowerFull.includes('mercadolivre') || storeLowerFull === 'ml'
-          let dealUrl: string
-          let imageUrl = item.imageUrl
-          if (isAmazonDeal) {
-            let amazonUrl: string | null = null
-            try {
-              const resolved = await resolveAmazonFromPelandoPage(item.dealUrl)
-              amazonUrl = resolved.amazonUrl
-              if (resolved.imageUrl) imageUrl = resolved.imageUrl
-              if (amazonUrl) {
-                console.log(`[pelando:amazon] ✓ resolveu: ${amazonUrl.slice(0, 80)}`)
-              } else {
-                console.log(`[pelando] não resolveu URL Amazon para: ${item.title.slice(0, 50)}`)
-              }
-            } catch (e) {
-              console.log(`[pelando:amazon] erro: ${(e as Error).message}`)
-            }
-            if (!amazonUrl) continue  // skip Amazon deals where real URL couldn't be resolved
-            dealUrl = await injectAmazonTag(amazonUrl)
-            // If still no product image, fetch from Amazon product page
-            if (imageUrl === item.imageUrl) {
-              const amazonImage = await fetchAmazonImage(dealUrl)
-              console.log(`[pelando:amazon] fetchAmazonImage: ${amazonImage ?? 'null'}`)
-              if (amazonImage) imageUrl = amazonImage
-            }
-          } else if (isMLDeal) {
-            let mlUrl: string | null = null
-            try {
-              mlUrl = await resolveMLFromPelandoPage(item.dealUrl)
-              if (mlUrl) {
-                console.log(`[pelando:ml] ✓ resolveu: ${mlUrl.slice(0, 80)}`)
-              } else {
-                console.log(`[pelando:ml] não resolveu URL ML para: ${item.title.slice(0, 50)}`)
-              }
-            } catch (e) {
-              console.log(`[pelando:ml] erro: ${(e as Error).message}`)
-            }
-            dealUrl = mlUrl ? await injectMLTag(mlUrl) : buildMLSearchUrl(item.title)
-          } else if (storeLowerFull.includes('shopee')) {
-            let shopeeUrl: string | null = null
-            try {
-              shopeeUrl = await resolveShopeeFromPelandoPage(item.dealUrl)
-              if (shopeeUrl) {
-                if (shopeeUrl.includes('shp.ee') || shopeeUrl.includes('s.shopee.com.br')) {
-                  shopeeUrl = await expandShortLink(shopeeUrl)
-                }
-                console.log(`[pelando:shopee] ✓ resolveu: ${shopeeUrl.slice(0, 80)}`)
-              } else {
-                console.log(`[pelando:shopee] não resolveu URL para: ${item.title.slice(0, 50)}`)
-              }
-            } catch (e) {
-              console.log(`[pelando:shopee] erro: ${(e as Error).message}`)
-            }
-            if (!shopeeUrl) continue
-            const subIds: SubIds = { source: 'telegram', trigger: 'auto', category: 'geral', slot: 'none' }
-            try { dealUrl = await generateAffiliateLink(shopeeUrl, subIds) } catch { dealUrl = shopeeUrl }
-          } else {
-            dealUrl = item.dealUrl
-          }
-
+          if (!couponCode) continue  // retry next cycle
+          seen.add(dealPageUrl)
+          console.log(`[pelando:cupom] ✓ ${couponCode} — ${storeName} — ${formatPriceFromProps(item)}`)
           allDeals.push({
-            id: item.dealUrl,
+            id: dealPageUrl,
             title: item.title.slice(0, 80),
-            price: formatPrice(item.price),
-            store: item.store,
-            dealUrl,
-            imageUrl,
+            price: formatPriceFromProps(item),
+            store: storeName,
+            dealUrl: dealPageUrl,
+            imageUrl: '',
             temperature: item.temperature,
             publishedAt: now,
-            couponCode: '',
+            couponCode,
           })
+          continue
         }
-      } catch (err) {
-        console.error(`[pelando] Erro em ${categoryUrl}:`, err instanceof Error ? err.message : err)
+
+        seen.add(dealPageUrl)
+
+        // Regular deal: apply store filter
+        if (ALLOWED_STORES.length > 0) {
+          const storeLower = storeName.toLowerCase()
+          if (!ALLOWED_STORES.some(s => storeLower.includes(s))) continue
+        }
+
+        const storeLower = storeName.toLowerCase()
+        const isAmazonDeal = storeLower.includes('amazon')
+        const isMLDeal = storeLower.includes('mercado') || storeLower.includes('mercadolivre') || storeLower === 'ml'
+        let dealUrl = dealPageUrl
+        let imageUrl = ''
+
+        if (isAmazonDeal) {
+          let amazonUrl: string | null = null
+          try {
+            const resolved = await resolveAmazonFromPelandoPage(dealPageUrl)
+            amazonUrl = resolved.amazonUrl
+            if (resolved.imageUrl) imageUrl = resolved.imageUrl
+            if (amazonUrl) {
+              console.log(`[pelando:amazon] ✓ resolveu: ${amazonUrl.slice(0, 80)}`)
+            } else {
+              console.log(`[pelando] não resolveu URL Amazon para: ${item.title.slice(0, 50)}`)
+            }
+          } catch (e) {
+            console.log(`[pelando:amazon] erro: ${(e as Error).message}`)
+          }
+          if (!amazonUrl) continue
+          dealUrl = await injectAmazonTag(amazonUrl)
+          if (!imageUrl) {
+            const amazonImage = await fetchAmazonImage(dealUrl)
+            if (amazonImage) imageUrl = amazonImage
+          }
+        } else if (isMLDeal) {
+          let mlUrl: string | null = null
+          try {
+            mlUrl = await resolveMLFromPelandoPage(dealPageUrl)
+            if (mlUrl) console.log(`[pelando:ml] ✓ resolveu: ${mlUrl.slice(0, 80)}`)
+            else console.log(`[pelando:ml] não resolveu URL ML para: ${item.title.slice(0, 50)}`)
+          } catch (e) {
+            console.log(`[pelando:ml] erro: ${(e as Error).message}`)
+          }
+          dealUrl = mlUrl ? await injectMLTag(mlUrl) : buildMLSearchUrl(item.title)
+        } else if (storeLower.includes('shopee')) {
+          let shopeeUrl: string | null = null
+          try {
+            shopeeUrl = await resolveShopeeFromPelandoPage(dealPageUrl)
+            if (shopeeUrl) {
+              if (shopeeUrl.includes('shp.ee') || shopeeUrl.includes('s.shopee.com.br')) {
+                shopeeUrl = await expandShortLink(shopeeUrl)
+              }
+              console.log(`[pelando:shopee] ✓ resolveu: ${shopeeUrl.slice(0, 80)}`)
+            } else {
+              console.log(`[pelando:shopee] não resolveu URL para: ${item.title.slice(0, 50)}`)
+            }
+          } catch (e) {
+            console.log(`[pelando:shopee] erro: ${(e as Error).message}`)
+          }
+          if (!shopeeUrl) continue
+          const subIds: SubIds = { source: 'telegram', trigger: 'auto', category: 'geral', slot: 'none' }
+          try { dealUrl = await generateAffiliateLink(shopeeUrl, subIds) } catch { dealUrl = shopeeUrl }
+        }
+
+        allDeals.push({
+          id: dealPageUrl,
+          title: item.title.slice(0, 80),
+          price: formatPriceFromProps(item),
+          store: storeName,
+          dealUrl,
+          imageUrl,
+          temperature: item.temperature,
+          publishedAt: now,
+          couponCode: '',
+        })
       }
+    } catch (err) {
+      console.error(`[pelando] Erro em ${categoryUrl}:`, err instanceof Error ? err.message : err)
     }
-
-    // Sort by temperature descending
-    return allDeals.sort((a, b) => b.temperature - a.temperature).slice(0, 20)
-
-  } finally {
-    await browser.close()
   }
+
+  return allDeals.sort((a, b) => b.temperature - a.temperature).slice(0, 20)
 }
 
-function formatPrice(raw: string): string {
-  if (!raw) return ''
-  if (/gr[aá]tis/i.test(raw)) return 'Grátis'
-  if (raw.includes('OFF')) return raw.trim()
-  const match = raw.match(/[\d.,]+/)
-  if (!match) return raw.trim()
-  const num = parseFloat(match[0].replace(/\./g, '').replace(',', '.'))
-  if (isNaN(num)) return raw.trim()
-  return `R$${num.toFixed(2).replace('.', ',')}`
+function formatPriceFromProps(item: PelandoRawDeal): string {
+  if (item.price !== null && item.price !== undefined) {
+    return `R$${item.price.toFixed(2).replace('.', ',')}`
+  }
+  if (item.discountPercentage !== null && item.discountPercentage !== undefined) {
+    return `${item.discountPercentage}% OFF`
+  }
+  if (item.discountFixed !== null && item.discountFixed !== undefined) {
+    return `R$${item.discountFixed.toFixed(2).replace('.', ',')} OFF`
+  }
+  return 'Grátis'
 }
