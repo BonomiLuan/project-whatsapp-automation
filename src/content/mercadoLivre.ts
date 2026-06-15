@@ -7,11 +7,9 @@ chromium.use(StealthPlugin())
 
 const MIN_DISCOUNT_PERCENT = 15
 
-// Páginas do site ML que listam produtos em oferta
+// Página principal de ofertas ML — sub-páginas de categoria retornam 200 mas sem cards
 const ML_PAGES = [
   'https://www.mercadolivre.com.br/ofertas',
-  'https://www.mercadolivre.com.br/ofertas/bebes',
-  'https://www.mercadolivre.com.br/ofertas/casa-e-jardim',
 ]
 
 const KEYWORD_MAP: [string, DealCategory][] = [
@@ -96,17 +94,18 @@ export async function fetchMLCategoryDeals(limit = 60): Promise<MLCategoryDeal[]
         try {
           await page.waitForSelector(cardSelector, { timeout: 15000 })
         } catch {
-          console.log(`[ml:playwright] ${label}: nenhum card encontrado após 15s — tentando scroll`)
-          // Category pages use lazy loading; scroll triggers content rendering
-          await page.evaluate(() => { window.scrollBy(0, 600) })
-          await page.waitForTimeout(2000)
-          await page.evaluate(() => { window.scrollBy(0, 600) })
-          try {
-            await page.waitForSelector(cardSelector, { timeout: 8000 })
-            console.log(`[ml:playwright] ${label}: cards encontrados após scroll`)
-          } catch {
-            console.log(`[ml:playwright] ${label}: ainda sem cards após scroll`)
-          }
+          console.log(`[ml:playwright] ${label}: nenhum card encontrado após 15s`)
+          continue
+        }
+
+        // Scroll progressivo para carregar mais cards (lazy loading da página)
+        let prevHeight = 0
+        for (let i = 0; i < 4; i++) {
+          const h = await page.evaluate(() => document.body.scrollHeight)
+          if (h === prevHeight) break
+          prevHeight = h
+          await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
+          await page.waitForTimeout(1500)
         }
 
         const found = await page.evaluate((selector) => {
@@ -138,7 +137,19 @@ export async function fetchMLCategoryDeals(limit = 60): Promise<MLCategoryDeal[]
             )
             const origFrac = origParent?.querySelector('[class*="andes-money-amount__fraction"], [class*="fraction"]')?.textContent?.replace(/\D/g, '') ?? ''
             const origCents = origParent?.querySelector('[class*="andes-money-amount__cents"], [class*="cents"]')?.textContent?.replace(/\D/g, '') ?? '00'
-            const original = origFrac ? parseFloat(`${origFrac}.${origCents.padEnd(2, '0')}`) : 0
+            let original = origFrac ? parseFloat(`${origFrac}.${origCents.padEnd(2, '0')}`) : 0
+
+            // Fallback: badge de desconto percentual (ex: "-30%") → calcula preço original
+            if (!original || original <= price) {
+              const discountBadge = card.querySelector(
+                '[class*="poly-component__discount"], [class*="price-tag-discount"], [class*="discount-label"], [class*="discount-badge"]'
+              )
+              const discountText = discountBadge?.textContent?.match(/(\d+)\s*%/)?.[1]
+              if (discountText) {
+                const pct = parseInt(discountText, 10)
+                if (pct > 0 && pct < 100) original = price / (1 - pct / 100)
+              }
+            }
 
             // Imagem
             const img = (card.querySelector<HTMLImageElement>('img[src*="mlstatic"], img[src*="http"]')?.src ?? card.querySelector<HTMLImageElement>('img')?.src ?? '').replace('http://', 'https://')
