@@ -96,7 +96,17 @@ export async function fetchMLCategoryDeals(limit = 60): Promise<MLCategoryDeal[]
         try {
           await page.waitForSelector(cardSelector, { timeout: 15000 })
         } catch {
-          console.log(`[ml:playwright] ${label}: nenhum card encontrado após 15s`)
+          console.log(`[ml:playwright] ${label}: nenhum card encontrado após 15s — tentando scroll`)
+          // Category pages use lazy loading; scroll triggers content rendering
+          await page.evaluate(() => { window.scrollBy(0, 600) })
+          await page.waitForTimeout(2000)
+          await page.evaluate(() => { window.scrollBy(0, 600) })
+          try {
+            await page.waitForSelector(cardSelector, { timeout: 8000 })
+            console.log(`[ml:playwright] ${label}: cards encontrados após scroll`)
+          } catch {
+            console.log(`[ml:playwright] ${label}: ainda sem cards após scroll`)
+          }
         }
 
         const found = await page.evaluate((selector) => {
