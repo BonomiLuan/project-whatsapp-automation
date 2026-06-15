@@ -377,64 +377,88 @@ const LISTING_HEADERS = {
 
 async function fetchCategoryPage(categoryUrl: string): Promise<PelandoRawDeal[]> {
   const category = categoryUrl.split('/').pop()!
-  let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined
+  const flaresolverrUrl = process.env.FLARESOLVERR_URL
+
+  let html: string
+
+  if (flaresolverrUrl) {
+    try {
+      console.log(`[pelando] ${category}: usando FlareSolverr`)
+      const res = await axios.post<{ solution: { response: string; status: number } }>(
+        `${flaresolverrUrl}/v1`,
+        { cmd: 'request.get', url: categoryUrl, maxTimeout: 60000 },
+        { timeout: 70000, headers: { 'Content-Type': 'application/json' } }
+      )
+      if (res.data.solution.status !== 200) {
+        console.log(`[pelando] ${category}: FlareSolverr status ${res.data.solution.status}`)
+        return []
+      }
+      html = res.data.solution.response
+    } catch (e) {
+      console.log(`[pelando] ${category}: FlareSolverr erro — ${(e as Error).message}`)
+      return []
+    }
+  } else {
+    let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined
+    try {
+      console.log(`[pelando] ${category}: FLARESOLVERR_URL não definido, usando Playwright`)
+      browser = await chromium.launch({
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+      })
+      const context = await browser.newContext({
+        viewport: { width: 1366, height: 768 },
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        locale: 'pt-BR',
+        extraHTTPHeaders: { 'Accept-Language': 'pt-BR,pt;q=0.9' },
+      })
+      const page = await context.newPage()
+      await page.goto(categoryUrl, { waitUntil: 'domcontentloaded', timeout: 30000 })
+      const title = await page.title()
+      if (/just a moment|um momento|attention required/i.test(title)) {
+        console.log(`[pelando] ${category}: Cloudflare challenge ativo, aguardando resolução...`)
+        try {
+          await page.waitForFunction(
+            () => !document.title.match(/just a moment|um momento|attention required/i),
+            { timeout: 12000 }
+          )
+        } catch {
+          console.log(`[pelando] ${category}: challenge não resolvido em 12s`)
+        }
+      }
+      html = await page.content()
+    } catch (e) {
+      console.log(`[pelando] ${category}: Playwright erro — ${(e as Error).message}`)
+      return []
+    } finally {
+      await browser?.close()
+    }
+  }
+
+  if (/just a moment|um momento|attention required/i.test(html.slice(0, 3000))) {
+    console.log(`[pelando] ${category}: bloqueado por Cloudflare`)
+    return []
+  }
+
+  const propsMatch = html.match(/component-url="[^"]*CommunityFeedContent[^"]*"[^>]*props="([^"]+)"/)
+  if (!propsMatch) {
+    console.log(`[pelando] ${category}: props não encontrado na página`)
+    return []
+  }
+
+  const jsonStr = propsMatch[1]
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
+    .replace(/&#39;/g, "'")
 
   try {
-    browser = await chromium.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
-    })
-    const context = await browser.newContext({
-      viewport: { width: 1366, height: 768 },
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-      locale: 'pt-BR',
-      extraHTTPHeaders: { 'Accept-Language': 'pt-BR,pt;q=0.9' },
-    })
-    const page = await context.newPage()
-
-    await page.goto(categoryUrl, { waitUntil: 'domcontentloaded', timeout: 30000 })
-
-    // Se Cloudflare IUAM estiver ativo, aguarda até 12s para o challenge resolver e redirecionar
-    const title = await page.title()
-    if (/just a moment|um momento|attention required/i.test(title)) {
-      console.log(`[pelando] ${category}: Cloudflare challenge ativo, aguardando resolução...`)
-      try {
-        await page.waitForFunction(
-          () => !document.title.match(/just a moment|um momento|attention required/i),
-          { timeout: 12000 }
-        )
-      } catch {
-        console.log(`[pelando] ${category}: challenge não resolvido em 12s`)
-      }
-    }
-
-    const html = await page.content()
-
-    if (/just a moment|um momento|attention required/i.test(html.slice(0, 3000))) {
-      console.log(`[pelando] ${category}: bloqueado por Cloudflare após espera`)
-      return []
-    }
-
-    const propsMatch = html.match(/component-url="[^"]*CommunityFeedContent[^"]*"[^>]*props="([^"]+)"/)
-    if (!propsMatch) {
-      console.log(`[pelando] ${category}: props não encontrado na página`)
-      return []
-    }
-
-    const jsonStr = propsMatch[1]
-      .replace(/&quot;/g, '"')
-      .replace(/&amp;/g, '&')
-      .replace(/&#39;/g, "'")
-
     const decoded = decodeAstro(JSON.parse(jsonStr)) as { initialDeals?: PelandoRawDeal[] }
     const deals = decoded.initialDeals ?? []
     console.log(`[pelando] ${category}: ${deals.length} deals encontrados`)
     return deals
   } catch (e) {
-    console.log(`[pelando] ${category}: erro — ${(e as Error).message}`)
+    console.log(`[pelando] ${category}: erro ao parsear props — ${(e as Error).message}`)
     return []
-  } finally {
-    await browser?.close()
   }
 }
 
