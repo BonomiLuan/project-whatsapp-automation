@@ -70,75 +70,63 @@ export const CATEGORY_META: Record<DealCategory, { emoji: string; label: string 
 
 const CATEGORY_KEYWORDS: Partial<Record<DealCategory, string[]>> = {
   higiene: [
-    'fralda pampers', 'fralda huggies', 'fralda mamypoko', 'fralda babysec',
-    'lenço umedecido pampers', 'lenço umedecido huggies', 'lenço umedecido johnsons',
-    'pomada bepantol bebê', 'pomada assadura', 'kit higiene bebê',
-    'shampoo johnsons bebê', 'sabonete johnsons bebê', 'algodão bebê',
+    'pomada bepantol', 'pomada assadura', 'algodão bebê', 'cotonete bebê',
+    'talco bebê', 'óleo corporal bebê', 'kit higiene bebê', 'trocador bebê',
   ],
   alimentacao: [
-    'mamadeira', 'chupeta', 'babador bebê', 'cadeira alimentação bebê',
-    'copo transição bebê', 'dicas para mães',
+    'mamadeira', 'chupeta', 'babador', 'cadeira alimentação',
+    'copo transição', 'kit pratos e talheres bebê', 'dosador leite em pó',
+    'extrator de leite', 'protetor de seio', 'almofada de amamentação',
   ],
   enxoval: [
-    'enxoval de bebe', 'enxoval bebe', 'lista de enxoval',
-    'mãe de primeira viagem', 'body bebê', 'manta bebê',
+    'body bebê', 'body kimono bebê', 'manta bebê', 'cueiro', 'fralda de pano', 
+    'macacão bebê', 'macacão ziper bebê', 'conjunto pagão', 'bolsa maternidade',
   ],
   mobilidade: [
-    'melhor carrinho de bebê', 'carrinho com bebe conforto',
-    'bebê conforto', 'cadeira de carro', 'carregador bebê',
+    'carrinho de bebê', 'bebê conforto', 'cadeira de carro', 
+    'canguru bebê', 'mochila porta bebê', 'protetor solar para carro',
   ],
   quarto: [
-    'quarto de bebê', 'berço bebê', 'dicas de decoração', 'móbile berço', 'monitor bebê',
+    'berço', 'móbile', 'monitor bebê', 'babá eletrônica', 
+    'protetor de berço', 'cortina blackout quarto bebê', 'luminária de parede',
   ],
   brinquedos: [
-    'brinquedos educativos', 'desenvolvimento infantil',
-    'chocalho bebê', 'mordedor bebê', 'tapete atividades bebê',
+    'brinquedos educativos', 'chocalho', 'mordedor', 
+    'tapete atividades', 'andador bebê', 'centro de atividades', 
+    'livros sensoriais', 'bichos de pelúcia',
   ],
   saude: [
-    'termômetro bebê', 'febre bebê', 'aspirador nasal bebê', 'nebulizador', 'cortador unhinha bebê',
-  ],
-  maternidade: [
-    'mala da maternidade', 'almofada de amamentação', 'amamentação', 'cinta pós parto', 'parto',
-  ],
-  casa: [
-    'panela antiaderente', 'jogo de panelas', 'tapete sala', 'organizador cozinha',
-    'cesto roupa suja', 'escorredor de louça', 'porta tempero',
+    'termômetro digital', 'aspirador nasal', 'nebulizador', 
+    'cortador de unha bebê', 'escova de cabelo bebê', 'kit primeiros socorros',
   ],
   banho: [
-    'toalha fralda papi bebê', 'toalha com capuz bebê', 'toalha papi',
-    'sabonete mustela bebê', 'sabonete johnsons bebê', 'sabonete galinha pintadinha',
-    'shampoo mustela bebê', 'shampoo johnsons bebê', 'shampoo infantil',
-    'condicionador infantil', 'hidratante mustela bebê', 'creme hidratante bebê',
-    'banheira bebê', 'banheira dobrável bebê', 'suporte banheira bebê',
-    'esponja banho bebê', 'termômetro banheira bebê',
+    'toalha capuz', 'banheira dobrável', 'suporte banheira', 
+    'esponja banho bebê', 'termômetro banheira', 'brinquedo de banho',
   ],
   fraldas: [
-    'fralda pampers premium care', 'fralda pampers pants', 'fralda pampers confort sec',
-    'fralda huggies supreme', 'fralda huggies roupinha', 'fralda huggies pants',
-    'fralda pants pull up', 'fralda calça bebê', 'fralda pants noturna',
-    'fralda de piscina bebê', 'fralda piscina huggies little swimmers',
-    'fralda premium bebê', 'fralda ultrafina premium', 'fralda mamypoko pants',
-    'kit fralda pampers rn', 'fralda babysec premium', 'fralda turma da monica',
-  ],
-  decoracao: [
-    'quadro decorativo sala', 'quadro decorativo quarto', 'quadro decorativo cozinha',
-    'vaso decorativo sala', 'vaso de plantas decorativo', 'vaso cerâmica decoração',
-    'espelho decorativo parede', 'espelho redondo decorativo',
-    'porta-retrato parede', 'moldura para quadro',
-    'luminária decorativa', 'abajur decorativo',
-    'enfeite de mesa sala', 'escultura decorativa',
-    'tapete decorativo sala', 'almofada decorativa sofá',
-    'arranjo artificial flores', 'planta artificial decoração',
+    'fralda pampers', 'fralda huggies', 'fralda mamypoko', 'fralda babysec',
+    'fralda turma da monica', 'lenço umedecido', 'fralda calça', 
+    'fralda noturna', 'fralda piscina',
   ],
   limpeza: [
-    'sabão em pó omo', 'sabão em pó ariel', 'sabão em pó brilhante', 'sabão em pó ypê',
-    'sabão líquido omo', 'sabão líquido ariel downy',
-    'amaciante downy', 'amaciante comfort',
-    'desinfetante lysol', 'desinfetante pinho sol',
-    'multiuso veja', 'limpador banheiro veja',
-    'água sanitária ypê', 'detergente ypê',
-    'esponja scotch brite', 'pano microfibra limpeza',
+    'sabão em pó', 'sabão líquido', 'amaciante', 'desinfetante', 
+    'multiuso', 'detergente', 'esponja scotch brite', 'pano microfibra', 
+    'limpa vidros', 'álcool 70',
   ],
+  decoracao: [
+    'quadro decorativo', 'vaso cerâmica', 'espelho redondo', 
+    'porta-retrato', 'abajur', 'almofada sofá', 
+    'planta artificial', 'tapete sala', 'cortina',
+  ],
+  casa: [
+    'panela antiaderente', 'jogo de panelas', 'organizador cozinha', 
+    'cesto roupa suja', 'escorredor de louça', 'porta tempero', 
+    'air fryer', 'cafeteira', 'liquidificador',
+  ],
+  maternidade: [
+    'mala maternidade', 'cinta pós parto', 'sutiã amamentação', 
+    'concha de amamentação', 'creme para estrias',
+  ]
 }
 
 export async function fetchShopeeDeals(limitPerCategory = 8): Promise<ShopeeProduct[]> {
