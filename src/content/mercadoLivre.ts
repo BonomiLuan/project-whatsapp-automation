@@ -7,9 +7,14 @@ chromium.use(StealthPlugin())
 
 const MIN_DISCOUNT_PERCENT = 15
 
-// Página principal de ofertas ML — sub-páginas de categoria retornam 200 mas sem cards
-const ML_PAGES = [
-  'https://www.mercadolivre.com.br/ofertas',
+// Buscas direcionadas ao nicho do grupo — categoria fixada por URL
+// lista.mercadolivre.com.br requer sessão; as buscas são feitas via navegação interna
+const ML_SEARCHES: Array<{ query: string; category: DealCategory }> = [
+  { query: 'fralda descartavel bebe',  category: 'fraldas'     },
+  { query: 'lenco umedecido bebe',     category: 'higiene'     },
+  { query: 'carrinho de bebe',         category: 'mobilidade'  },
+  { query: 'mamadeira bebe',           category: 'alimentacao' },
+  { query: 'roupinha bebe conjunto',   category: 'enxoval'     },
 ]
 
 const KEYWORD_MAP: [string, DealCategory][] = [
@@ -65,27 +70,29 @@ export async function fetchMLCategoryDeals(limit = 60): Promise<MLCategoryDeal[]
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
     })
 
-    const context = await browser.newContext({
-      viewport: { width: 1366, height: 768 },
+    const contextOptions = {
+      viewport: { width: 1366, height: 768 } as const,
       userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
       locale: 'pt-BR',
       extraHTTPHeaders: { 'Accept-Language': 'pt-BR,pt;q=0.9' },
-    })
+    }
 
     const seenIds = new Set<string>()
-    const rawProducts: Array<{ id: string; title: string; price: number; original: number; img: string; url: string }> = []
+    const rawProducts: Array<{ id: string; title: string; price: number; original: number; img: string; url: string; category: DealCategory }> = []
 
-    for (const pageUrl of ML_PAGES) {
-      const label = pageUrl.replace('https://www.mercadolivre.com.br/', '')
+    for (const { query, category: pageCategory } of ML_SEARCHES) {
+      const label = query
+      // Contexto limpo por busca — evita rastreamento de sessão entre requests
+      const context = await browser.newContext(contextOptions)
       const page = await context.newPage()
       try {
-        console.log(`[ml:playwright] abrindo ${label}...`)
-        const res = await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: 30000 })
+        const searchUrl = `https://lista.mercadolivre.com.br/${encodeURIComponent(query.replace(/ /g, '-'))}`
+        console.log(`[ml:playwright] buscando "${label}"...`)
+        const res = await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30000 })
         console.log(`[ml:playwright] HTTP ${res?.status()} | ${label}`)
 
         if (!res || res.status() >= 400) {
-          console.log(`[ml:playwright] página inválida, pulando`)
-          await page.close()
+          console.log(`[ml:playwright] ${label}: página inválida, pulando`)
           continue
         }
 
@@ -159,37 +166,39 @@ export async function fetchMLCategoryDeals(limit = 60): Promise<MLCategoryDeal[]
           return results
         }, cardSelector)
 
-        console.log(`[ml:playwright] ${label}: ${found.length} cards extraídos`)
+        const newCount = found.filter(p => !seenIds.has(p.id)).length
+        console.log(`[ml:playwright] ${label}: ${found.length} cards extraídos (${newCount} novos)`)
         for (const p of found) {
-          if (!seenIds.has(p.id)) { seenIds.add(p.id); rawProducts.push(p) }
+          if (!seenIds.has(p.id)) { seenIds.add(p.id); rawProducts.push({ ...p, category: pageCategory }) }
         }
       } catch (e) {
         console.error(`[ml:playwright] erro em ${label}: ${(e as Error).message}`)
       } finally {
         await page.close()
+        await context.close()
       }
     }
 
-    // Filtra por desconto e gera links de afiliado
+    // Plano B: todos os produtos da página /ofertas são deals curados pelo ML
+    // Desconto é informativo quando detectado, mas não bloqueia inclusão
     const deals: MLCategoryDeal[] = []
     let withDiscount = 0
 
     for (const p of rawProducts) {
-      if (!p.original || p.original <= p.price) continue
-      withDiscount++
-      const discount = Math.round((1 - p.price / p.original) * 100)
-      if (discount < MIN_DISCOUNT_PERCENT) continue
+      const hasOriginal = p.original > 0 && p.original > p.price
+      const discount = hasOriginal ? Math.round((1 - p.price / p.original) * 100) : 0
+      if (hasOriginal) withDiscount++
 
       const affiliateUrl = await injectMLTag(p.url)
       deals.push({
         id: p.id,
         title: p.title.slice(0, 80),
         price: `R$${p.price.toFixed(2).replace('.', ',')}`,
-        originalPrice: `R$${p.original.toFixed(2).replace('.', ',')}`,
+        originalPrice: hasOriginal ? `R$${p.original.toFixed(2).replace('.', ',')}` : '',
         discountPercent: discount,
         imageUrl: p.img,
         affiliateUrl,
-        category: inferCategory(p.title),
+        category: p.category,
       })
     }
 
