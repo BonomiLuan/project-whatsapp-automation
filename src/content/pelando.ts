@@ -392,13 +392,20 @@ async function fetchCategoryPage(categoryUrl: string): Promise<PelandoRawDeal[]>
     })
     const page = await context.newPage()
 
-    // Cloudflare challenge pode levar alguns segundos — waitUntil networkidle aguarda conclusão
-    await page.goto(categoryUrl, { waitUntil: 'networkidle', timeout: 45000 })
+    await page.goto(categoryUrl, { waitUntil: 'domcontentloaded', timeout: 30000 })
 
+    // Se Cloudflare IUAM estiver ativo, aguarda até 12s para o challenge resolver e redirecionar
     const title = await page.title()
     if (/just a moment|um momento|attention required/i.test(title)) {
-      console.log(`[pelando] ${category}: Cloudflare challenge ativo, aguardando...`)
-      await page.waitForTimeout(6000)
+      console.log(`[pelando] ${category}: Cloudflare challenge ativo, aguardando resolução...`)
+      try {
+        await page.waitForFunction(
+          () => !document.title.match(/just a moment|um momento|attention required/i),
+          { timeout: 12000 }
+        )
+      } catch {
+        console.log(`[pelando] ${category}: challenge não resolvido em 12s`)
+      }
     }
 
     const html = await page.content()
