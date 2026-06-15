@@ -1,7 +1,11 @@
 import axios from 'axios'
+import { chromium } from 'playwright-extra'
+import StealthPlugin from 'puppeteer-extra-plugin-stealth'
 import { injectAmazonTag } from '../api/amazonAffiliate.js'
 import { buildMLSearchUrl, injectMLTag } from '../api/mercadoLivreAffiliate.js'
 import { generateAffiliateLink, expandShortLink, type SubIds } from '../api/shopeeAffiliate.js'
+
+chromium.use(StealthPlugin())
 
 function upgradeAmazonImageSize(url: string): string {
   // Only upgrade clearly small/thumbnail modifiers (SS = square-small, SY/SX = fixed small dimensions)
@@ -373,20 +377,34 @@ const LISTING_HEADERS = {
 
 async function fetchCategoryPage(categoryUrl: string): Promise<PelandoRawDeal[]> {
   const category = categoryUrl.split('/').pop()!
+  let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined
+
   try {
-    const res = await axios.get<string>(categoryUrl, {
-      timeout: 25000, responseType: 'text',
-      headers: LISTING_HEADERS,
-      validateStatus: () => true,
+    browser = await chromium.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
     })
-    const html = res.data as string
+    const context = await browser.newContext({
+      viewport: { width: 1366, height: 768 },
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      locale: 'pt-BR',
+      extraHTTPHeaders: { 'Accept-Language': 'pt-BR,pt;q=0.9' },
+    })
+    const page = await context.newPage()
+
+    // Cloudflare challenge pode levar alguns segundos — waitUntil networkidle aguarda conclusão
+    await page.goto(categoryUrl, { waitUntil: 'networkidle', timeout: 45000 })
+
+    const title = await page.title()
+    if (/just a moment|um momento|attention required/i.test(title)) {
+      console.log(`[pelando] ${category}: Cloudflare challenge ativo, aguardando...`)
+      await page.waitForTimeout(6000)
+    }
+
+    const html = await page.content()
 
     if (/just a moment|um momento|attention required/i.test(html.slice(0, 3000))) {
-      console.log(`[pelando] ${category}: bloqueado por Cloudflare (HTTP ${res.status})`)
-      return []
-    }
-    if (res.status !== 200) {
-      console.log(`[pelando] ${category}: HTTP ${res.status}`)
+      console.log(`[pelando] ${category}: bloqueado por Cloudflare após espera`)
       return []
     }
 
@@ -408,6 +426,8 @@ async function fetchCategoryPage(categoryUrl: string): Promise<PelandoRawDeal[]>
   } catch (e) {
     console.log(`[pelando] ${category}: erro — ${(e as Error).message}`)
     return []
+  } finally {
+    await browser?.close()
   }
 }
 

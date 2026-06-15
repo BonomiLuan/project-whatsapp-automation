@@ -645,7 +645,6 @@ app.listen(PORT, () => {
   createBot()
   refreshDeals()
   monitorPelando()
-  monitorML()
   const baseUrl = process.env.BASE_URL || ''
   if (!baseUrl || baseUrl.includes('localhost')) {
     console.warn('[links] ⚠️  BASE_URL não configurado ou é localhost — links curtos não vão funcionar em produção')
@@ -653,6 +652,5 @@ app.listen(PORT, () => {
   initLinksTable().catch(console.error)
   cron.schedule('*/30 * * * *', refreshDeals, { timezone: 'America/Sao_Paulo' })
   cron.schedule('*/30 * * * *', monitorPelando, { timezone: 'America/Sao_Paulo' })
-  cron.schedule('10,40 * * * *', monitorML, { timezone: 'America/Sao_Paulo' })
   cron.schedule('*/15 7-22 * * *', sendNextSuggestion, { timezone: 'America/Sao_Paulo' })
 })
