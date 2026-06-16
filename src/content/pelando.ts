@@ -330,12 +330,17 @@ async function resolveCouponCodeFromPelandoPage(dealUrl: string, flaresolverrUrl
     return { couponCode: null, fullTitle: null }
   }
 
-  // Extract full title from og:title meta tag (not truncated like card props)
+  // Extract full title — try og:title, then <title>, then <h1>
   const ogTitle =
-    html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
-    html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:title["']/i)?.[1] ||
+    html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"'<]+)["']/i)?.[1] ||
+    html.match(/<meta[^>]+content=["']([^"'<]+)["'][^>]+property=["']og:title["']/i)?.[1] ||
     null
-  const fullTitle = ogTitle ? ogTitle.replace(/\s*[-|]\s*[Pp]elando.*$/, '').trim() : null
+  const pageTitle = html.match(/<title[^>]*>([^<]{10,})<\/title>/i)?.[1] || null
+  const h1Title = html.match(/<h1[^>]*>([^<]{10,})<\/h1>/i)?.[1] || null
+  const rawTitle = ogTitle || pageTitle || h1Title || null
+  const fullTitle = rawTitle ? rawTitle.replace(/\s*[-|]\s*[Pp]elando.*$/i, '').replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/&quot;/g, '"').trim() : null
+  console.log(`[pelando:cupom] título detalhe: ${fullTitle ?? '(não encontrado)'}`)
+
 
   // Pelando uses Astro — deal data is serialized as HTML-encoded JSON in the page
   // Pattern: &quot;couponCode&quot;:[0,&quot;CORREOFF&quot;]
