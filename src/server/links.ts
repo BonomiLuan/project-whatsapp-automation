@@ -285,6 +285,13 @@ export async function createLink(data: {
   return entry
 }
 
+export async function updateLinkImage(code: string, buffer: Buffer, mime: string): Promise<void> {
+  await pool.query(
+    'UPDATE links SET image_data = $1, image_mime = $2 WHERE code = $3 AND image_data IS NULL',
+    [buffer, mime, code]
+  )
+}
+
 // Distributed lock: atomically claims the auto-send slot.
 // Returns true if this instance should send (no send in the last `intervalMinutes`).
 export async function claimAutoSendSlot(intervalMinutes = 13): Promise<boolean> {

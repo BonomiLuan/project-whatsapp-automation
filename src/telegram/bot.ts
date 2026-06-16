@@ -1,3 +1,4 @@
+import axios from 'axios'
 import { Telegraf, Scenes, session, Markup } from 'telegraf'
 import type { WizardContext } from 'telegraf/scenes'
 import { createReadStream } from 'fs'
@@ -9,7 +10,7 @@ import { generateAffiliateLink, fetchShopeeProductByUrl, expandShortLink, CATEGO
 import { injectAmazonTag, isAmazonUrl } from '../api/amazonAffiliate.js'
 import { injectMLTag, isMercadoLivreUrl, fetchMLProductInfo, resolveMLShortLink } from '../api/mercadoLivreAffiliate.js'
 import { type UnifiedDeal } from '../server/index.js'
-import { createLink, cleanupLinks, truncateLinks, markDealVote } from '../server/links.js'
+import { createLink, cleanupLinks, truncateLinks, markDealVote, updateLinkImage } from '../server/links.js'
 
 import type { Telegram } from 'telegraf'
 let telegramApi: Telegram | null = null
@@ -910,12 +911,27 @@ export async function sendDealToChat(deal: UnifiedDeal): Promise<void> {
 
   const waButton = dealButtons(deal.id, dealUrl)
 
+  const linkCode = shortUrl.includes('/r/') ? shortUrl.split('/r/').pop()! : null
+
   for (let i = 0; i < chatIds.length; i++) {
     if (i > 0) await new Promise(r => setTimeout(r, 60_000))
     const id = chatIds[i]
     if (deal.imageUrl) {
       try {
-        await telegramApi!.sendPhoto(id, deal.imageUrl, { caption: text, ...waButton })
+        const sent = await telegramApi!.sendPhoto(id, deal.imageUrl, { caption: text, ...waButton })
+        // After first successful send, retrieve file from Telegram and store in link DB
+        if (i === 0 && linkCode && sent.photo?.length) {
+          const largest = sent.photo[sent.photo.length - 1]
+          try {
+            const file = await telegramApi!.getFile(largest.file_id)
+            const fileUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${file.file_path}`
+            const imgRes = await axios.get<ArrayBuffer>(fileUrl, { responseType: 'arraybuffer', timeout: 10000 })
+            const buffer = Buffer.from(imgRes.data)
+            const mime = (imgRes.headers['content-type'] as string) || 'image/jpeg'
+            await updateLinkImage(linkCode, buffer, mime)
+            console.log(`[links] ✓ imagem do Telegram armazenada para ${linkCode} (${buffer.length} bytes)`)
+          } catch { /* imagem já armazenada ou erro ignorável */ }
+        }
         continue
       } catch { /* fallback to text */ }
     }
