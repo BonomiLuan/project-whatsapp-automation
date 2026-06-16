@@ -293,7 +293,12 @@ async function resolveShopeeFromPelandoPage(dealUrl: string): Promise<string | n
   return null
 }
 
-async function resolveCouponCodeFromPelandoPage(dealUrl: string, flaresolverrUrl?: string): Promise<string | null> {
+interface CouponPageResult {
+  couponCode: string | null
+  fullTitle: string | null
+}
+
+async function resolveCouponCodeFromPelandoPage(dealUrl: string, flaresolverrUrl?: string): Promise<CouponPageResult> {
   let html = ''
   try {
     if (flaresolverrUrl) {
@@ -304,7 +309,7 @@ async function resolveCouponCodeFromPelandoPage(dealUrl: string, flaresolverrUrl
       )
       if (res.data.solution.status !== 200) {
         console.log(`[pelando:cupom] FlareSolverr status ${res.data.solution.status} para ${dealUrl}`)
-        return null
+        return { couponCode: null, fullTitle: null }
       }
       html = res.data.solution.response
     } else {
@@ -322,33 +327,40 @@ async function resolveCouponCodeFromPelandoPage(dealUrl: string, flaresolverrUrl
     }
   } catch (e) {
     console.log(`[pelando:cupom] falhou para ${dealUrl}: ${(e as Error).message}`)
-    return null
+    return { couponCode: null, fullTitle: null }
   }
+
+  // Extract full title from og:title meta tag (not truncated like card props)
+  const ogTitle =
+    html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
+    html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:title["']/i)?.[1] ||
+    null
+  const fullTitle = ogTitle ? ogTitle.replace(/\s*[-|]\s*[Pp]elando.*$/, '').trim() : null
 
   // Pelando uses Astro — deal data is serialized as HTML-encoded JSON in the page
   // Pattern: &quot;couponCode&quot;:[0,&quot;CORREOFF&quot;]
   const astroJson = html.match(/&quot;couponCode&quot;:\[0,&quot;([A-Z0-9]{2,25})&quot;\]/i)
   if (astroJson) {
     console.log(`[pelando:cupom] página detalhe: couponCode JSON = "${astroJson[1]}"`)
-    return astroJson[1].toUpperCase()
+    return { couponCode: astroJson[1].toUpperCase(), fullTitle }
   }
 
   // Fallback 1: <span class="code" ...>CORREOFF</span>
   const spanCode = html.match(/<span\s+class="code"[^>]*>([A-Z0-9]{2,25})<\/span>/i)
   if (spanCode) {
     console.log(`[pelando:cupom] página detalhe: span.code = "${spanCode[1]}"`)
-    return spanCode[1].toUpperCase()
+    return { couponCode: spanCode[1].toUpperCase(), fullTitle }
   }
 
   // Fallback 2: data-code="CORREOFF" on copy button
   const dataCode = html.match(/data-code="([A-Z0-9]{2,25})"/i)
   if (dataCode) {
     console.log(`[pelando:cupom] página detalhe: data-code = "${dataCode[1]}"`)
-    return dataCode[1].toUpperCase()
+    return { couponCode: dataCode[1].toUpperCase(), fullTitle }
   }
 
   console.log(`[pelando:cupom] página detalhe: código não encontrado em ${dealUrl}`)
-  return null
+  return { couponCode: null, fullTitle }
 }
 
 // Astro serializes props as [type, value] tuples: [0, scalar] | [1, array]
@@ -536,16 +548,19 @@ export async function fetchDeals(): Promise<PelandoDeal[]> {
         // Coupon deal — code from props or fallback to detail page
         if (isCouponPrice || isCouponDeal) {
           let couponCode = item.couponCode ?? ''
+          let dealTitle = item.title
           if (!couponCode) {
             console.log(`[pelando:cupom] sem código nos props, buscando na página: ${item.title.slice(0, 60)}`)
-            couponCode = await resolveCouponCodeFromPelandoPage(dealPageUrl, flaresolverrUrl) ?? ''
+            const result = await resolveCouponCodeFromPelandoPage(dealPageUrl, flaresolverrUrl)
+            couponCode = result.couponCode ?? ''
+            if (result.fullTitle && result.fullTitle.length > dealTitle.length) dealTitle = result.fullTitle
           }
           if (!couponCode) continue  // retry next cycle
           seen.add(dealPageUrl)
           console.log(`[pelando:cupom] ✓ ${couponCode} — ${storeName} — ${formatPriceFromProps(item)}`)
           allDeals.push({
             id: dealPageUrl,
-            title: item.title.slice(0, 150),
+            title: dealTitle,
             price: formatPriceFromProps(item),
             store: storeName,
             dealUrl: dealPageUrl,
