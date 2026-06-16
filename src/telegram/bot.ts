@@ -948,8 +948,10 @@ export async function sendProductToChat(
 
   const groupUrl = process.env.WHATSAPP_GROUP_URL || ''
   let shortUrl = product.originalUrl
+  let linkCode: string | null = null
   try {
     const link = await createLink({ title: product.name, image_url: product.imageUrl ?? '', affiliate_url: product.originalUrl, source: detectSource(product.originalUrl) })
+    linkCode = link.code
     shortUrl = (process.env.BASE_URL || '') + '/r/' + link.code
   } catch (err) { console.warn('[links] createLink failed in sendProductToChat:', err) }
   const text = buildTelegramText({ ...product, originalUrl: shortUrl }, coupon, groupUrl)
@@ -959,7 +961,19 @@ export async function sendProductToChat(
     const id = chatIds[i]
     if (product.imageUrl) {
       try {
-        await telegramApi!.sendPhoto(id, product.imageUrl, { caption: text })
+        const sent = await telegramApi!.sendPhoto(id, product.imageUrl, { caption: text })
+        if (i === 0 && linkCode && sent.photo?.length) {
+          const largest = sent.photo[sent.photo.length - 1]
+          try {
+            const file = await telegramApi!.getFile(largest.file_id)
+            const fileUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${file.file_path}`
+            const imgRes = await axios.get<ArrayBuffer>(fileUrl, { responseType: 'arraybuffer', timeout: 10000 })
+            const buffer = Buffer.from(imgRes.data)
+            const mime = (imgRes.headers['content-type'] as string) || 'image/jpeg'
+            await updateLinkImage(linkCode, buffer, mime)
+            console.log(`[links] ✓ imagem do Telegram armazenada para ${linkCode} (${buffer.length} bytes)`)
+          } catch { /* imagem já armazenada ou erro ignorável */ }
+        }
         continue
       } catch { /* fallback to text */ }
     }
@@ -1080,6 +1094,8 @@ export async function sendPelandoCouponToChat(deal: import('../content/pelando.j
     storeLink
       ? `🛒 Acesse a loja, aplique o cupom e economize!`
       : `🔗 Ver no Pelando:\n${deal.dealUrl}`,
+    ``,
+    `⚠️ <i>Cupons podem expirar a qualquer momento. Aproveite rápido!</i>`,
     groupUrl ? `\n💚 Grupo:\n${groupUrl}` : '',
     ``,
     `#Cupom #MamãeEconômica`,

@@ -588,8 +588,6 @@ export async function fetchDeals(): Promise<PelandoDeal[]> {
           if (sourceUrl?.includes('mercadolivre.com.br') || sourceUrl?.includes('mercadolibre.com')) {
             console.log(`[pelando:ml] ✓ ${sourceUrl.slice(0, 80)}`)
             dealUrl = await injectMLTag(sourceUrl)
-            const mlInfo = await fetchMLProductInfo(sourceUrl).catch(() => null)
-            if (mlInfo?.imageUrl) imageUrl = mlInfo.imageUrl
           } else {
             console.log(`[pelando:ml] sem sourceUrl para: ${item.title.slice(0, 50)}, usando busca`)
             dealUrl = buildMLSearchUrl(item.title)
