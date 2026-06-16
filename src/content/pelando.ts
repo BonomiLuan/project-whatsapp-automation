@@ -377,7 +377,8 @@ const LISTING_HEADERS = {
 
 async function fetchCategoryPage(categoryUrl: string): Promise<PelandoRawDeal[]> {
   const category = categoryUrl.split('/').pop()!
-  const flaresolverrUrl = process.env.FLARESOLVERR_URL
+  const rawFlareUrl = process.env.FLARESOLVERR_URL?.trim()
+  const flaresolverrUrl = rawFlareUrl && !rawFlareUrl.startsWith('http') ? `https://${rawFlareUrl}` : rawFlareUrl
 
   let html: string
 
