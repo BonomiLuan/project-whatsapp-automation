@@ -545,7 +545,7 @@ export async function fetchDeals(): Promise<PelandoDeal[]> {
           console.log(`[pelando:cupom] ✓ ${couponCode} — ${storeName} — ${formatPriceFromProps(item)}`)
           allDeals.push({
             id: dealPageUrl,
-            title: item.title.slice(0, 80),
+            title: item.title.slice(0, 150),
             price: formatPriceFromProps(item),
             store: storeName,
             dealUrl: dealPageUrl,

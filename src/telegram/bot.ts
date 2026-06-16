@@ -1082,12 +1082,11 @@ export async function sendPelandoCouponToChat(deal: import('../content/pelando.j
   const storeName = deal.store || 'Pelando'
   const storeLink = getCouponStoreUrl(storeName)
 
+  const cleanTitle = deal.title.replace(/^cupom\s+\S+\s*[-:]\s*/i, '').trim()
   const message = [
     `🎟️ <b>CUPOM ${esc(storeName.toUpperCase())}</b>`,
     ``,
-    `📦 ${esc(deal.title.slice(0, 60))}`,
-    `🏪 ${esc(storeName)}`,
-    `💰 <b>${esc(deal.price)}</b>`,
+    `📦 ${esc(cleanTitle)}`,
     ``,
     `📋 Código: <code>${esc(deal.couponCode || '')}</code>`,
     ``,
