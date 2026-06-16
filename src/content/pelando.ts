@@ -2,8 +2,8 @@ import axios from 'axios'
 import { chromium } from 'playwright-extra'
 import StealthPlugin from 'puppeteer-extra-plugin-stealth'
 import { injectAmazonTag } from '../api/amazonAffiliate.js'
-import { buildMLSearchUrl, injectMLTag } from '../api/mercadoLivreAffiliate.js'
-import { generateAffiliateLink, expandShortLink, type SubIds } from '../api/shopeeAffiliate.js'
+import { buildMLSearchUrl, injectMLTag, fetchMLProductInfo } from '../api/mercadoLivreAffiliate.js'
+import { generateAffiliateLink, expandShortLink, fetchShopeeProductByUrl, type SubIds } from '../api/shopeeAffiliate.js'
 
 chromium.use(StealthPlugin())
 
@@ -365,6 +365,9 @@ interface PelandoRawDeal {
   status: string
   createdAt: string
   couponCode?: string | null
+  sourceUrl?: string | null
+  imageUrl?: string | null
+  imageSrcset?: { url: string; width: number }[]
   store: { name: string; slug: string }
 }
 
@@ -475,6 +478,14 @@ export interface PelandoDeal {
   couponCode: string   // empty string if not a coupon deal
 }
 
+function getBestPelandoImage(item: PelandoRawDeal): string {
+  if (item.imageSrcset?.length) {
+    const largest = item.imageSrcset.reduce((a, b) => b.width > a.width ? b : a)
+    return largest.url
+  }
+  return item.imageUrl ?? ''
+}
+
 // Pelando category pages for the maternity/home niche
 const CATEGORIES = [
   'https://www.pelando.com.br/c/para-minha-familia', // Família, filhos e pets
@@ -546,52 +557,41 @@ export async function fetchDeals(): Promise<PelandoDeal[]> {
         let dealUrl = dealPageUrl
         let imageUrl = ''
 
+        // sourceUrl comes directly from the category page Astro props — no detail page fetch needed
+        const sourceUrl = item.sourceUrl ?? null
+        imageUrl = getBestPelandoImage(item)
+
         if (isAmazonDeal) {
-          let amazonUrl: string | null = null
-          try {
-            const resolved = await resolveAmazonFromPelandoPage(dealPageUrl)
-            amazonUrl = resolved.amazonUrl
-            if (resolved.imageUrl) imageUrl = resolved.imageUrl
-            if (amazonUrl) {
-              console.log(`[pelando:amazon] ✓ resolveu: ${amazonUrl.slice(0, 80)}`)
-            } else {
-              console.log(`[pelando] não resolveu URL Amazon para: ${item.title.slice(0, 50)}`)
-            }
-          } catch (e) {
-            console.log(`[pelando:amazon] erro: ${(e as Error).message}`)
+          if (!sourceUrl?.includes('amazon.com.br')) {
+            console.log(`[pelando:amazon] sem sourceUrl para: ${item.title.slice(0, 50)}`)
+            continue
           }
-          if (!amazonUrl) continue
-          dealUrl = await injectAmazonTag(amazonUrl)
-          if (!imageUrl) {
-            const amazonImage = await fetchAmazonImage(dealUrl)
-            if (amazonImage) imageUrl = amazonImage
-          }
+          console.log(`[pelando:amazon] ✓ ${sourceUrl.slice(0, 80)}`)
+          dealUrl = await injectAmazonTag(sourceUrl)
+          const amazonImage = await fetchAmazonImage(dealUrl)
+          if (amazonImage) imageUrl = amazonImage
         } else if (isMLDeal) {
-          let mlUrl: string | null = null
-          try {
-            mlUrl = await resolveMLFromPelandoPage(dealPageUrl)
-            if (mlUrl) console.log(`[pelando:ml] ✓ resolveu: ${mlUrl.slice(0, 80)}`)
-            else console.log(`[pelando:ml] não resolveu URL ML para: ${item.title.slice(0, 50)}`)
-          } catch (e) {
-            console.log(`[pelando:ml] erro: ${(e as Error).message}`)
+          if (sourceUrl?.includes('mercadolivre.com.br') || sourceUrl?.includes('mercadolibre.com')) {
+            console.log(`[pelando:ml] ✓ ${sourceUrl.slice(0, 80)}`)
+            dealUrl = await injectMLTag(sourceUrl)
+            const mlInfo = await fetchMLProductInfo(sourceUrl).catch(() => null)
+            if (mlInfo?.imageUrl) imageUrl = mlInfo.imageUrl
+          } else {
+            console.log(`[pelando:ml] sem sourceUrl para: ${item.title.slice(0, 50)}, usando busca`)
+            dealUrl = buildMLSearchUrl(item.title)
           }
-          dealUrl = mlUrl ? await injectMLTag(mlUrl) : buildMLSearchUrl(item.title)
         } else if (storeLower.includes('shopee')) {
-          let shopeeUrl: string | null = null
-          try {
-            shopeeUrl = await resolveShopeeFromPelandoPage(dealPageUrl)
-            if (shopeeUrl) {
-              if (shopeeUrl.includes('shp.ee') || shopeeUrl.includes('s.shopee.com.br')) {
-                shopeeUrl = await expandShortLink(shopeeUrl)
-              }
-              console.log(`[pelando:shopee] ✓ resolveu: ${shopeeUrl.slice(0, 80)}`)
-            } else {
-              console.log(`[pelando:shopee] não resolveu URL para: ${item.title.slice(0, 50)}`)
-            }
-          } catch (e) {
-            console.log(`[pelando:shopee] erro: ${(e as Error).message}`)
+          if (!sourceUrl?.includes('shopee.com.br') && !sourceUrl?.includes('shp.ee')) {
+            console.log(`[pelando:shopee] sem sourceUrl para: ${item.title.slice(0, 50)}`)
+            continue
           }
-          if (!shopeeUrl) continue
+          let shopeeUrl = sourceUrl
+          if (shopeeUrl.includes('shp.ee') || shopeeUrl.includes('s.shopee.com.br')) {
+            shopeeUrl = await expandShortLink(shopeeUrl)
+          }
+          console.log(`[pelando:shopee] ✓ ${shopeeUrl.slice(0, 80)}`)
+          const shopeeInfo = await fetchShopeeProductByUrl(shopeeUrl).catch(() => null)
+          if (shopeeInfo?.imageUrl) imageUrl = shopeeInfo.imageUrl
           const subIds: SubIds = { source: 'telegram', trigger: 'auto', category: 'geral', slot: 'none' }
           try { dealUrl = await generateAffiliateLink(shopeeUrl, subIds) } catch { dealUrl = shopeeUrl }
         }
