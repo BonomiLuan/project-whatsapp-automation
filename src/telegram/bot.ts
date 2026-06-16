@@ -566,8 +566,9 @@ export function createBot() {
     '/saude — 💊 Termômetro, aspirador nasal',
     '/maternidade — 🤱 Mala maternidade, amamentação',
     '/fraldas — 🍼 Kits, trocador, pomada assadura',
-    '/limpeza — 🧹 OMO, Ariel, Lysol, Veja',
-    '/casa — 🏠 Panelas, organização, tapetes',
+    '/limpeza — 🧹 OMO, Ariel, percarbonato, Veja',
+    '/casa — 🏠 Panelas, organizadores, tapetes',
+    '/organizacao — 🗂️ Organizadores de geladeira, armário, cozinha',
     '',
     '/amazon — 📦 Ofertas Amazon do momento',
     '/cupom — 🎟️ Montar e enviar um cupom Shopee',
@@ -663,7 +664,7 @@ export function createBot() {
   // One command per sub-niche
   const categoryCommands: DealCategory[] = [
     'higiene', 'alimentacao', 'enxoval', 'mobilidade', 'quarto',
-    'brinquedos', 'saude', 'maternidade', 'casa', 'limpeza', 'banho', 'fraldas', 'decoracao',
+    'brinquedos', 'saude', 'maternidade', 'casa', 'limpeza', 'banho', 'fraldas', 'decoracao', 'organizacao',
   ]
   for (const cat of categoryCommands) {
     bot.command(cat, (ctx) => sendCategoryDeals(ctx, cat))
@@ -823,9 +824,10 @@ export function createBot() {
     { command: 'saude', description: `${CATEGORY_META.saude.emoji} Termômetro, aspirador nasal` },
     { command: 'maternidade', description: `${CATEGORY_META.maternidade.emoji} Mala maternidade, amamentação` },
     { command: 'fraldas', description: `${CATEGORY_META.fraldas.emoji} Kits, trocador, pomada assadura` },
-    { command: 'limpeza', description: `${CATEGORY_META.limpeza.emoji} OMO, Ariel, Lysol, Veja` },
-    { command: 'casa', description: `${CATEGORY_META.casa.emoji} Panelas, organização, tapetes` },
+    { command: 'limpeza', description: `${CATEGORY_META.limpeza.emoji} OMO, Ariel, percarbonato, Veja` },
+    { command: 'casa', description: `${CATEGORY_META.casa.emoji} Panelas, organizadores, tapetes` },
     { command: 'decoracao', description: `${CATEGORY_META.decoracao.emoji} Quadros, vasos, espelhos, luminárias` },
+    { command: 'organizacao', description: `${CATEGORY_META.organizacao.emoji} Organizadores geladeira, armário, cozinha` },
     { command: 'amazon', description: '📦 Ofertas Amazon do momento' },
     { command: 'cupom', description: '🎟️ Montar e enviar um cupom Shopee' },
     { command: 'atualizar', description: 'Buscar novas ofertas agora' },

@@ -30,7 +30,8 @@ async function gql<T>(query: string, variables?: Record<string, unknown>): Promi
 export type DealCategory =
   | 'higiene' | 'alimentacao' | 'enxoval' | 'mobilidade'
   | 'quarto' | 'brinquedos' | 'saude' | 'maternidade'
-  | 'casa' | 'limpeza' | 'banho' | 'fraldas' | 'decoracao' | 'geral'
+  | 'casa' | 'limpeza' | 'banho' | 'fraldas' | 'decoracao'
+  | 'organizacao' | 'geral'
 
 export interface ShopeeProduct {
   itemId: number
@@ -65,6 +66,7 @@ export const CATEGORY_META: Record<DealCategory, { emoji: string; label: string 
   banho:       { emoji: '🛁', label: 'Banho Bebê' },
   fraldas:     { emoji: '🍼', label: 'Fraldas' },
   decoracao:   { emoji: '🖼️', label: 'Decoração' },
+  organizacao: { emoji: '🗂️', label: 'Organização' },
   geral:       { emoji: '🛍️', label: 'Geral' },
 }
 
@@ -109,9 +111,9 @@ const CATEGORY_KEYWORDS: Partial<Record<DealCategory, string[]>> = {
     'fralda noturna', 'fralda piscina',
   ],
   limpeza: [
-    'sabão em pó', 'sabão líquido', 'amaciante', 'desinfetante', 
-    'multiuso', 'detergente', 'esponja scotch brite', 'pano microfibra', 
-    'limpa vidros', 'álcool 70',
+    'sabão em pó', 'sabão líquido', 'amaciante', 'desinfetante',
+    'multiuso', 'detergente', 'esponja scotch brite', 'pano microfibra',
+    'limpa vidros', 'álcool 70', 'percarbonato de sódio', 'bicarbonato limpeza',
   ],
   decoracao: [
     'quadro decorativo', 'vaso cerâmica', 'espelho redondo', 
@@ -124,9 +126,15 @@ const CATEGORY_KEYWORDS: Partial<Record<DealCategory, string[]>> = {
     'air fryer', 'cafeteira', 'liquidificador',
   ],
   maternidade: [
-    'mala maternidade', 'cinta pós parto', 'sutiã amamentação', 
+    'mala maternidade', 'cinta pós parto', 'sutiã amamentação',
     'concha de amamentação', 'creme para estrias',
-  ]
+  ],
+  organizacao: [
+    'organizador de geladeira', 'organizador de armário cozinha',
+    'caixa organizadora despensa', 'porta mantimentos cozinha',
+    'organizador de gaveta', 'prateleira aramada cozinha',
+    'suporte para potes', 'organizador multiuso cozinha',
+  ],
 }
 
 export async function fetchShopeeDeals(limitPerCategory = 8): Promise<ShopeeProduct[]> {
