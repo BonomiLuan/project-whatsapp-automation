@@ -412,8 +412,9 @@ async function fetchCategoryPage(categoryUrl: string): Promise<PelandoRawDeal[]>
   const rawFlareUrl = process.env.FLARESOLVERR_URL?.trim()
   const flaresolverrUrl = rawFlareUrl && !rawFlareUrl.startsWith('http') ? `https://${rawFlareUrl}` : rawFlareUrl
 
-  let html: string
+  let html = ''
 
+  let flaresolverrFailed = false
   if (flaresolverrUrl) {
     try {
       console.log(`[pelando] ${category}: usando FlareSolverr`)
@@ -423,18 +424,21 @@ async function fetchCategoryPage(categoryUrl: string): Promise<PelandoRawDeal[]>
         { timeout: 70000, headers: { 'Content-Type': 'application/json' } }
       )
       if (res.data.solution.status !== 200) {
-        console.log(`[pelando] ${category}: FlareSolverr status ${res.data.solution.status}`)
-        return []
+        console.log(`[pelando] ${category}: FlareSolverr status ${res.data.solution.status} — tentando Playwright`)
+        flaresolverrFailed = true
+      } else {
+        html = res.data.solution.response
       }
-      html = res.data.solution.response
     } catch (e) {
-      console.log(`[pelando] ${category}: FlareSolverr erro — ${(e as Error).message}`)
-      return []
+      console.log(`[pelando] ${category}: FlareSolverr erro — ${(e as Error).message} — tentando Playwright`)
+      flaresolverrFailed = true
     }
-  } else {
+  }
+
+  if (!flaresolverrUrl || flaresolverrFailed) {
     let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined
     try {
-      console.log(`[pelando] ${category}: FLARESOLVERR_URL não definido, usando Playwright`)
+      console.log(`[pelando] ${category}: usando Playwright`)
       browser = await chromium.launch({
         headless: true,
         args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
