@@ -571,6 +571,7 @@ export function createBot() {
     '/organizacao — 🗂️ Organizadores de geladeira, armário, cozinha',
     '',
     '/amazon — 📦 Ofertas Amazon do momento',
+    '/meli — 🛒 Ofertas Mercado Livre do momento',
     '/cupom — 🎟️ Montar e enviar um cupom Shopee',
     '/atualizar — buscar novas ofertas agora',
     '/feedback — ver resumo de curtidas e irrelevantes',
@@ -680,6 +681,22 @@ export function createBot() {
     }
     const sample = pool.sort(() => Math.random() - 0.5).slice(0, 5)
     await ctx.reply(`📦 <b>Amazon — ${sample.length} ofertas</b>`, { parse_mode: 'HTML' })
+    for (const deal of sample) {
+      await sendDealCard(ctx, deal)
+      await new Promise(r => setTimeout(r, 300))
+    }
+  })
+
+  bot.command('meli', async (ctx) => {
+    const { getCachedDeals } = await import('../server/index.js')
+    const deals = getCachedDeals()
+    const pool = deals.filter(d => d.source === 'mercado-livre')
+    if (!pool.length) {
+      await ctx.reply('🔍 Nenhuma oferta Mercado Livre no momento. Tente /atualizar.')
+      return
+    }
+    const sample = pool.sort(() => Math.random() - 0.5).slice(0, 5)
+    await ctx.reply(`🛒 <b>Mercado Livre — ${sample.length} ofertas</b>`, { parse_mode: 'HTML' })
     for (const deal of sample) {
       await sendDealCard(ctx, deal)
       await new Promise(r => setTimeout(r, 300))
@@ -829,6 +846,7 @@ export function createBot() {
     { command: 'decoracao', description: `${CATEGORY_META.decoracao.emoji} Quadros, vasos, espelhos, luminárias` },
     { command: 'organizacao', description: `${CATEGORY_META.organizacao.emoji} Organizadores geladeira, armário, cozinha` },
     { command: 'amazon', description: '📦 Ofertas Amazon do momento' },
+    { command: 'meli', description: '🛒 Ofertas Mercado Livre do momento' },
     { command: 'cupom', description: '🎟️ Montar e enviar um cupom Shopee' },
     { command: 'atualizar', description: 'Buscar novas ofertas agora' },
     { command: 'limpar', description: '🧹 Limpar links expirados do banco' },
