@@ -894,7 +894,8 @@ export async function sendDealToChat(deal: UnifiedDeal): Promise<void> {
 
   let shortUrl = dealUrl
   try {
-    const link = await createLink({ title: deal.title, image_url: deal.imageUrl ?? '', affiliate_url: dealUrl, source: deal.source === 'mercado-livre' ? 'ml' : deal.source === 'shopee' ? 'shopee' : 'amazon' })
+    const imageForLink = (deal.imageUrl ?? '').includes('pelando.com.br') ? '' : (deal.imageUrl ?? '')
+    const link = await createLink({ title: deal.title, image_url: imageForLink, affiliate_url: dealUrl, source: deal.source === 'mercado-livre' ? 'ml' : deal.source === 'shopee' ? 'shopee' : 'amazon' })
     shortUrl = (process.env.BASE_URL || '') + '/r/' + link.code
   } catch (err) { console.warn('[links] createLink failed in sendDealToChat:', err) }
 
@@ -1028,7 +1029,8 @@ async function sendDealCard(ctx: Ctx, deal: UnifiedDeal) {
 
   let shortUrl = dealUrl
   try {
-    const link = await createLink({ title: deal.title, image_url: deal.imageUrl ?? '', affiliate_url: dealUrl, source: deal.source === 'mercado-livre' ? 'ml' : deal.source === 'shopee' ? 'shopee' : 'amazon' })
+    const imageForLink = (deal.imageUrl ?? '').includes('pelando.com.br') ? '' : (deal.imageUrl ?? '')
+    const link = await createLink({ title: deal.title, image_url: imageForLink, affiliate_url: dealUrl, source: deal.source === 'mercado-livre' ? 'ml' : deal.source === 'shopee' ? 'shopee' : 'amazon' })
     shortUrl = (process.env.BASE_URL || '') + '/r/' + link.code
   } catch (err) { console.warn('[links] createLink failed in sendDealCard:', err) }
 
