@@ -293,23 +293,35 @@ async function resolveShopeeFromPelandoPage(dealUrl: string): Promise<string | n
   return null
 }
 
-async function resolveCouponCodeFromPelandoPage(dealUrl: string): Promise<string | null> {
-  const HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-    'Accept-Language': 'pt-BR,pt;q=0.9',
-    'Cache-Control': 'no-cache',
-  }
-
+async function resolveCouponCodeFromPelandoPage(dealUrl: string, flaresolverrUrl?: string): Promise<string | null> {
   let html = ''
   try {
-    const res = await axios.get<string>(dealUrl, {
-      timeout: 12000, responseType: 'text', headers: HEADERS,
-      maxRedirects: 5, validateStatus: () => true,
-    })
-    html = res.data as string
+    if (flaresolverrUrl) {
+      const res = await axios.post<{ solution: { response: string; status: number } }>(
+        `${flaresolverrUrl}/v1`,
+        { cmd: 'request.get', url: dealUrl, maxTimeout: 30000 },
+        { timeout: 40000, headers: { 'Content-Type': 'application/json' } }
+      )
+      if (res.data.solution.status !== 200) {
+        console.log(`[pelando:cupom] FlareSolverr status ${res.data.solution.status} para ${dealUrl}`)
+        return null
+      }
+      html = res.data.solution.response
+    } else {
+      const HEADERS = {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'pt-BR,pt;q=0.9',
+        'Cache-Control': 'no-cache',
+      }
+      const res = await axios.get<string>(dealUrl, {
+        timeout: 12000, responseType: 'text', headers: HEADERS,
+        maxRedirects: 5, validateStatus: () => true,
+      })
+      html = res.data as string
+    }
   } catch (e) {
-    console.log(`[pelando:cupom] axios falhou para ${dealUrl}: ${(e as Error).message}`)
+    console.log(`[pelando:cupom] falhou para ${dealUrl}: ${(e as Error).message}`)
     return null
   }
 
@@ -499,6 +511,8 @@ const ALLOWED_STORES: string[] = ['amazon', 'mercado livre', 'mercadolivre', 'ml
 export async function fetchDeals(): Promise<PelandoDeal[]> {
   const allDeals: PelandoDeal[] = []
   const seen = new Set<string>()
+  const rawFlareUrl = process.env.FLARESOLVERR_URL?.trim()
+  const flaresolverrUrl = rawFlareUrl && !rawFlareUrl.startsWith('http') ? `https://${rawFlareUrl}` : rawFlareUrl
 
   for (const categoryUrl of CATEGORIES) {
     try {
@@ -524,7 +538,7 @@ export async function fetchDeals(): Promise<PelandoDeal[]> {
           let couponCode = item.couponCode ?? ''
           if (!couponCode) {
             console.log(`[pelando:cupom] sem código nos props, buscando na página: ${item.title.slice(0, 60)}`)
-            couponCode = await resolveCouponCodeFromPelandoPage(dealPageUrl) ?? ''
+            couponCode = await resolveCouponCodeFromPelandoPage(dealPageUrl, flaresolverrUrl) ?? ''
           }
           if (!couponCode) continue  // retry next cycle
           seen.add(dealPageUrl)

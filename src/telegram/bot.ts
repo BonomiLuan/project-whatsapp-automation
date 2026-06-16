@@ -1069,7 +1069,7 @@ export async function sendPelandoCouponToChat(deal: import('../content/pelando.j
   const storeLink = getCouponStoreUrl(storeName)
 
   const message = [
-    `🎟️ <b>CUPOM ENCONTRADO NO PELANDO!</b>`,
+    `🎟️ <b>CUPOM ${esc(storeName.toUpperCase())}</b>`,
     ``,
     `📦 ${esc(deal.title.slice(0, 60))}`,
     `🏪 ${esc(storeName)}`,
