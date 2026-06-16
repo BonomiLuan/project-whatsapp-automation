@@ -131,13 +131,23 @@ export function buildExpiredRedirectUrl(
 // DDL migration
 // ---------------------------------------------------------------------------
 
-export async function initLinksTable(): Promise<void> {
+let _initPromise: Promise<void> | null = null
+
+export function initLinksTable(): Promise<void> {
+  if (!_initPromise) _initPromise = _runInit()
+  return _initPromise
+}
+
+async function _runInit(): Promise<void> {
   if (!process.env.DATABASE_URL) {
     console.warn('[links] DATABASE_URL não definido — tabela de links não será criada')
     return
   }
+  // Advisory lock prevents concurrent DDL across Railway instances during rolling deploy
+  const client = await pool.connect()
   try {
-    await pool.query(`
+    await client.query('SELECT pg_advisory_lock(987654321)')
+    await client.query(`
       CREATE TABLE IF NOT EXISTS links (
         code          VARCHAR(5)   PRIMARY KEY,
         title         TEXT         NOT NULL,
@@ -160,7 +170,7 @@ export async function initLinksTable(): Promise<void> {
         ON CONFLICT DO NOTHING;
     `)
     // Remove duplicate affiliate_urls keeping the most recent row before creating unique index
-    await pool.query(`
+    await client.query(`
       DELETE FROM links
       WHERE code IN (
         SELECT code FROM (
@@ -171,10 +181,10 @@ export async function initLinksTable(): Promise<void> {
         WHERE rn > 1
       )
     `)
-    await pool.query(`
+    await client.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_links_affiliate_url ON links(affiliate_url)
     `)
-    await pool.query(`
+    await client.query(`
       CREATE TABLE IF NOT EXISTS deal_history (
         deal_id   TEXT        PRIMARY KEY,
         title     TEXT        NOT NULL DEFAULT '',
@@ -188,6 +198,22 @@ export async function initLinksTable(): Promise<void> {
   } catch (err) {
     console.error('[links] ❌ Falha ao conectar/criar tabela:', err)
     throw err
+  } finally {
+    await client.query('SELECT pg_advisory_unlock(987654321)')
+    client.release()
+  }
+}
+
+export async function withCronLock<T>(lockId: number, fn: () => Promise<T>): Promise<T | null> {
+  if (!process.env.DATABASE_URL) return fn()
+  const client = await pool.connect()
+  try {
+    const res = await client.query<{ pg_try_advisory_lock: boolean }>('SELECT pg_try_advisory_lock($1)', [lockId])
+    if (!res.rows[0].pg_try_advisory_lock) return null
+    return await fn()
+  } finally {
+    await client.query('SELECT pg_advisory_unlock($1)', [lockId])
+    client.release()
   }
 }
 
@@ -265,7 +291,7 @@ export async function createLink(data: {
   }
 
   // Fetch and store image bytes if not yet stored
-  if (!(entry as unknown as { has_image: boolean }).has_image) {
+  if (!(entry as unknown as { has_image: boolean }).has_image && data.image_url) {
     try {
       const img = await fetchImageForStorage(data.image_url)
       if (img) {

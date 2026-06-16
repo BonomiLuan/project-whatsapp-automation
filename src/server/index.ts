@@ -15,7 +15,7 @@ import { fetchShopeeDeals, generateAffiliateLink, CATEGORY_META, type SubIds, ty
 import { fetchMLProductInfo, injectMLTag } from '../api/mercadoLivreAffiliate.js'
 import { quickFetchProduct } from '../scraper/productScraper.js'
 import { createBot, sendProductToChat, sendDealToChat } from '../telegram/bot.js'
-import { initLinksTable, getLink, getLinkImageData, claimAutoSendSlot, incrementClick, getLinks, isSsrfAllowed, buildExpiredRedirectUrl, recordDealSent, getExcludedDealIds, type LinkEntry } from './links.js'
+import { initLinksTable, withCronLock, getLink, getLinkImageData, claimAutoSendSlot, incrementClick, getLinks, isSsrfAllowed, buildExpiredRedirectUrl, recordDealSent, getExcludedDealIds, type LinkEntry } from './links.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const app = express()
@@ -237,6 +237,11 @@ export async function refreshDeals() {
 }
 
 export async function monitorPelando(): Promise<void> {
+  const ran = await withCronLock(111222333, _monitorPelando)
+  if (ran === null) console.log('[pelando:monitor] Outra instância já está rodando, pulando ciclo')
+}
+
+async function _monitorPelando(): Promise<void> {
   console.log('[pelando:monitor] Verificando novos deals e cupons...')
   try {
     const pelandoDeals = await fetchPelandoDeals()

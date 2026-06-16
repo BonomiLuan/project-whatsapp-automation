@@ -296,6 +296,7 @@ async function resolveShopeeFromPelandoPage(dealUrl: string): Promise<string | n
 interface CouponPageResult {
   couponCode: string | null
   fullTitle: string | null
+  cloudflareBlocked?: boolean
 }
 
 async function resolveCouponCodeFromPelandoPage(dealUrl: string): Promise<CouponPageResult> {
@@ -329,6 +330,10 @@ async function resolveCouponCodeFromPelandoPage(dealUrl: string): Promise<Coupon
   const fullTitle = rawTitle ? rawTitle.replace(/\s*[-|]\s*[Pp]elando.*$/i, '').replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/&quot;/g, '"').trim() : null
   console.log(`[pelando:cupom] título detalhe: ${fullTitle ?? '(não encontrado)'}`)
 
+  // Cloudflare blocked the detail page — signal caller to skip this deal
+  if (fullTitle && /^just a moment|^um momento|attention required/i.test(fullTitle)) {
+    return { couponCode: null, fullTitle: null, cloudflareBlocked: true }
+  }
 
   // Pelando uses Astro — deal data is serialized as HTML-encoded JSON in the page
   // Pattern: &quot;couponCode&quot;:[0,&quot;CORREOFF&quot;]
@@ -544,8 +549,8 @@ export async function fetchDeals(): Promise<PelandoDeal[]> {
 
         // Coupon deal — code from props or fallback to detail page
         if (isCouponPrice || isCouponDeal) {
-          // In-app-only deals never have a public coupon code
-          if (/só no app|somente no app|only in app/i.test(item.title)) {
+          // Deals that never have a public coupon code
+          if (/só no app|somente no app|only in app|\bprime\b/i.test(item.title)) {
             seen.add(dealPageUrl)
             continue
           }
@@ -556,6 +561,7 @@ export async function fetchDeals(): Promise<PelandoDeal[]> {
             const result = await resolveCouponCodeFromPelandoPage(dealPageUrl)
             couponCode = result.couponCode ?? ''
             if (result.fullTitle && result.fullTitle.length > dealTitle.length) dealTitle = result.fullTitle
+            if (result.cloudflareBlocked) { seen.add(dealPageUrl); continue }
           }
           if (!couponCode) continue  // retry next cycle
           seen.add(dealPageUrl)
