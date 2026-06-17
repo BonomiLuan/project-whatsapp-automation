@@ -81,33 +81,33 @@ const CATEGORY_KEYWORDS: Partial<Record<DealCategory, string[]>> = {
     'extrator de leite', 'protetor de seio', 'almofada de amamentação',
   ],
   enxoval: [
-    'body bebê', 'body kimono bebê', 'manta bebê', 'cueiro', 'fralda de pano', 
+    'body bebê', 'body kimono bebê', 'manta bebê', 'cueiro', 'fralda de pano',
     'macacão bebê', 'macacão ziper bebê', 'conjunto pagão', 'bolsa maternidade',
   ],
   mobilidade: [
-    'carrinho de bebê', 'bebê conforto', 'cadeira de carro', 
+    'carrinho de bebê', 'bebê conforto', 'cadeira de carro',
     'canguru bebê', 'mochila porta bebê', 'protetor solar para carro',
   ],
   quarto: [
-    'berço', 'móbile', 'monitor bebê', 'babá eletrônica', 
+    'berço', 'móbile', 'monitor bebê', 'babá eletrônica',
     'protetor de berço', 'cortina blackout quarto bebê', 'luminária de parede',
   ],
   brinquedos: [
-    'brinquedos educativos', 'chocalho', 'mordedor', 
-    'tapete atividades', 'andador bebê', 'centro de atividades', 
+    'brinquedos educativos', 'chocalho', 'mordedor',
+    'tapete atividades', 'andador bebê', 'centro de atividades',
     'livros sensoriais', 'bichos de pelúcia',
   ],
   saude: [
-    'termômetro digital', 'aspirador nasal', 'nebulizador', 
+    'termômetro digital', 'aspirador nasal', 'nebulizador',
     'cortador de unha bebê', 'escova de cabelo bebê', 'kit primeiros socorros',
   ],
   banho: [
-    'toalha capuz', 'banheira dobrável', 'suporte banheira', 
+    'toalha capuz', 'banheira dobrável', 'suporte banheira',
     'esponja banho bebê', 'termômetro banheira', 'brinquedo de banho',
   ],
   fraldas: [
     'fralda pampers', 'fralda huggies', 'fralda mamypoko', 'fralda babysec',
-    'fralda turma da monica', 'lenço umedecido', 'fralda calça', 
+    'fralda turma da monica', 'lenço umedecido', 'fralda calça',
     'fralda noturna', 'fralda piscina',
   ],
   limpeza: [
@@ -116,13 +116,13 @@ const CATEGORY_KEYWORDS: Partial<Record<DealCategory, string[]>> = {
     'limpa vidros', 'álcool 70', 'percarbonato de sódio', 'bicarbonato limpeza',
   ],
   decoracao: [
-    'quadro decorativo', 'vaso cerâmica', 'espelho redondo', 
-    'porta-retrato', 'abajur', 'almofada sofá', 
+    'quadro decorativo', 'vaso cerâmica', 'espelho redondo',
+    'porta-retrato', 'abajur', 'almofada sofá',
     'planta artificial', 'tapete sala', 'cortina',
   ],
   casa: [
-    'panela antiaderente', 'jogo de panelas', 'organizador cozinha', 
-    'cesto roupa suja', 'escorredor de louça', 'porta tempero', 
+    'panela antiaderente', 'jogo de panelas', 'organizador cozinha',
+    'cesto roupa suja', 'escorredor de louça', 'porta tempero',
     'air fryer', 'cafeteira', 'liquidificador',
   ],
   maternidade: [
