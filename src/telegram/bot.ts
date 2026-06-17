@@ -7,7 +7,7 @@ import { scrapeProduct, quickFetchProduct, type ProductData } from '../scraper/p
 import { buildMessagePayload, fmt } from '../content/messageBuilder.js'
 import { sendOfferMessage } from '../api/metaClient.js'
 import { generateAffiliateLink, fetchShopeeProductByUrl, expandShortLink, CATEGORY_META, type SubIds, type DealCategory } from '../api/shopeeAffiliate.js'
-import { injectAmazonTag, isAmazonUrl } from '../api/amazonAffiliate.js'
+import { injectAmazonTag, isAmazonUrl } from '../adapters/affiliates/AmazonAffiliate.js'
 import { injectMLTag, isMercadoLivreUrl, fetchMLProductInfo, resolveMLShortLink } from '../api/mercadoLivreAffiliate.js'
 import { type UnifiedDeal } from '../server/index.js'
 import { createLink, cleanupLinks, truncateLinks, markDealVote, updateLinkImage } from '../server/links.js'
