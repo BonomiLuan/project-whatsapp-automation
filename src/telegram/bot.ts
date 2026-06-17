@@ -1076,7 +1076,7 @@ function getCouponStoreUrl(store: string): { url: string; label: string } | null
   return null
 }
 
-export async function sendPelandoCouponToChat(deal: import('../content/pelando.js').PelandoDeal): Promise<void> {
+export async function sendPelandoCouponToChat(deal: import('../adapters/scrapers/PelandoScraper.js').PelandoDeal): Promise<void> {
   const chatIds = getTargetChatIds()
   if (!telegramApi || chatIds.length === 0) throw new Error('Bot não configurado')
 
