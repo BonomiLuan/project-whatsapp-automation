@@ -1,7 +1,7 @@
 import { chromium } from 'playwright-extra'
 import StealthPlugin from 'puppeteer-extra-plugin-stealth'
-import { injectMLTag } from '../adapters/affiliates/MLAffiliate.js'
-import type { DealCategory } from '../adapters/affiliates/ShopeeAffiliate.js'
+import { injectMLTag } from '../affiliates/MLAffiliate.js'
+import type { DealCategory } from '../affiliates/ShopeeAffiliate.js'
 
 chromium.use(StealthPlugin())
 

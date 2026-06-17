@@ -307,7 +307,7 @@ async function _monitorPelando(): Promise<void> {
 export async function monitorML(): Promise<void> {
   console.log('[ml:monitor] Buscando deals ML por categoria...')
   try {
-    const { fetchMLCategoryDeals } = await import('../content/mercadoLivre.js')
+    const { fetchMLCategoryDeals } = await import('../adapters/scrapers/MercadoLivreScraper.js')
     const mlDeals = await fetchMLCategoryDeals(50)
     const now = new Date().toISOString()
 
