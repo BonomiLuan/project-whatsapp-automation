@@ -3,7 +3,7 @@ import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const HISTORY_FILE = join(__dirname, '../../data/history.json')
+const HISTORY_FILE = join(__dirname, '../../../data/history.json')
 
 export interface HistoryEntry {
   id: string
