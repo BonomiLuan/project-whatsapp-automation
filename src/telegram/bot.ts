@@ -3,9 +3,9 @@ import { Telegraf, Scenes, session, Markup } from 'telegraf'
 import type { WizardContext } from 'telegraf/scenes'
 import { createReadStream } from 'fs'
 import { resolve } from 'path'
-import { scrapeProduct, quickFetchProduct, type ProductData } from '../scraper/productScraper.js'
-import { buildMessagePayload, fmt } from '../content/messageBuilder.js'
-import { sendOfferMessage } from '../api/metaClient.js'
+import { scrapeProduct, quickFetchProduct, type ProductData } from '../adapters/scrapers/ProductScraper.js'
+import { buildMessagePayload, fmt } from '../adapters/publishers/format.js'
+import { sendOfferMessage } from '../adapters/publishers/WhatsAppPublisher.js'
 import { generateAffiliateLink, fetchShopeeProductByUrl, expandShortLink, CATEGORY_META, type SubIds, type DealCategory } from '../adapters/affiliates/ShopeeAffiliate.js'
 import { injectAmazonTag, isAmazonUrl } from '../adapters/affiliates/AmazonAffiliate.js'
 import { injectMLTag, isMercadoLivreUrl, fetchMLProductInfo, resolveMLShortLink } from '../adapters/affiliates/MLAffiliate.js'
@@ -511,7 +511,7 @@ couponWizard.action(/^coupon_(telegram|whatsapp|both|cancel)$/, async (ctx) => {
     }
 
     if (dest === 'whatsapp' || dest === 'both') {
-      const payload: import('../content/messageBuilder.js').MessagePayload = {
+      const payload: import('../adapters/publishers/format.js').MessagePayload = {
         name:         `🎟️ CUPOM: ${couponCode}`,
         price:        couponDiscount!,
         coupon:       couponMinimum ? `Mínimo: ${couponMinimum}` : ' ',
@@ -722,7 +722,7 @@ export function createBot() {
       const orig = deal.originalPrice ?? ''
       const priceFormatted = orig ? `~${orig}~ ${deal.price}` : deal.price
 
-      const payload: import('../content/messageBuilder.js').MessagePayload = {
+      const payload: import('../adapters/publishers/format.js').MessagePayload = {
         name: deal.title.slice(0, 60),
         price: priceFormatted,
         coupon: ' ',
