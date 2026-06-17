@@ -3,7 +3,7 @@ import { chromium } from 'playwright-extra'
 import StealthPlugin from 'puppeteer-extra-plugin-stealth'
 import { injectAmazonTag } from '../adapters/affiliates/AmazonAffiliate.js'
 import { buildMLSearchUrl, injectMLTag, fetchMLProductInfo } from '../adapters/affiliates/MLAffiliate.js'
-import { generateAffiliateLink, expandShortLink, fetchShopeeProductByUrl, type SubIds } from '../api/shopeeAffiliate.js'
+import { generateAffiliateLink, expandShortLink, fetchShopeeProductByUrl, type SubIds } from '../adapters/affiliates/ShopeeAffiliate.js'
 
 chromium.use(StealthPlugin())
 
