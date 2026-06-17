@@ -1,9 +1,9 @@
 import axios from 'axios'
 import { chromium } from 'playwright-extra'
 import StealthPlugin from 'puppeteer-extra-plugin-stealth'
-import { injectAmazonTag } from '../adapters/affiliates/AmazonAffiliate.js'
-import { buildMLSearchUrl, injectMLTag, fetchMLProductInfo } from '../adapters/affiliates/MLAffiliate.js'
-import { generateAffiliateLink, expandShortLink, fetchShopeeProductByUrl, type SubIds } from '../adapters/affiliates/ShopeeAffiliate.js'
+import { injectAmazonTag } from '../affiliates/AmazonAffiliate.js'
+import { buildMLSearchUrl, injectMLTag, fetchMLProductInfo } from '../affiliates/MLAffiliate.js'
+import { generateAffiliateLink, expandShortLink, fetchShopeeProductByUrl, type SubIds } from '../affiliates/ShopeeAffiliate.js'
 
 chromium.use(StealthPlugin())
 

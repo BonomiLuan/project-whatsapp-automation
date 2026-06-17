@@ -10,7 +10,7 @@ import { scrapeProduct } from '../adapters/scrapers/ProductScraper.js'
 import { buildMessagePayload } from '../adapters/publishers/format.js'
 import { sendOfferMessage } from '../adapters/publishers/WhatsAppPublisher.js'
 import { appendHistory, loadHistory } from '../adapters/db/HistoryRepository.js'
-import { fetchDeals as fetchPelandoDeals } from '../content/pelando.js'
+import { fetchDeals as fetchPelandoDeals } from '../adapters/scrapers/PelandoScraper.js'
 import { fetchShopeeDeals, generateAffiliateLink, CATEGORY_META, type SubIds, type DealCategory } from '../adapters/affiliates/ShopeeAffiliate.js'
 import { fetchMLProductInfo, injectMLTag } from '../adapters/affiliates/MLAffiliate.js'
 import { quickFetchProduct } from '../adapters/scrapers/ProductScraper.js'
@@ -248,7 +248,7 @@ async function _monitorPelando(): Promise<void> {
     const now = new Date().toISOString()
 
     const freshDeals: UnifiedDeal[] = []
-    const newCoupons: import('../content/pelando.js').PelandoDeal[] = []
+    const newCoupons: import('../adapters/scrapers/PelandoScraper.js').PelandoDeal[] = []
     let amazonCount = 0, mlCount = 0
 
     for (const d of pelandoDeals) {
