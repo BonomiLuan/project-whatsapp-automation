@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { MessagePayload } from '../adapters/publishers/format.js'
+import type { MessagePayload } from '../publishers/format.js'
 
 const BASE_URL = 'https://graph.facebook.com/v25.0'
 
