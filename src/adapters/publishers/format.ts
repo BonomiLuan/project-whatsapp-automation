@@ -1,4 +1,4 @@
-import type { ProductData } from '../../scraper/productScraper.js'
+import type { ProductData } from '../scrapers/ProductScraper.js'
 
 export interface MessagePayload {
   name: string

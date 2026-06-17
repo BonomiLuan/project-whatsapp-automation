@@ -1,4 +1,4 @@
-import { scrapeProduct } from './productScraper.js'
+import { scrapeProduct } from '../adapters/scrapers/ProductScraper.js'
 
 const url = process.argv[2]
 if (!url) {
