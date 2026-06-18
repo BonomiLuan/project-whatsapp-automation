@@ -1,7 +1,6 @@
 import 'dotenv/config'
 import express from 'express'
 import axios from 'axios'
-import cron from 'node-cron'
 import rateLimit from 'express-rate-limit'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
@@ -14,7 +13,7 @@ import { fetchDeals as fetchPelandoDeals } from '../adapters/scrapers/PelandoScr
 import { fetchShopeeDeals, generateAffiliateLink, CATEGORY_META, type SubIds, type DealCategory } from '../adapters/affiliates/ShopeeAffiliate.js'
 import { fetchMLProductInfo, injectMLTag } from '../adapters/affiliates/MLAffiliate.js'
 import { quickFetchProduct } from '../adapters/scrapers/ProductScraper.js'
-import { createBot, sendProductToChat, sendDealToChat } from '../telegram/bot.js'
+import { createBot, sendProductToChat, sendDealToChat } from '../adapters/publishers/TelegramPublisher.js'
 import { initLinksTable, getLink, getLinkImageData, incrementClick, getLinks, isSsrfAllowed, buildExpiredRedirectUrl, recordDealSent, getExcludedDealIds, type LinkEntry } from '../adapters/db/PgLinkRepository.js'
 import { withCronLock, claimAutoSendSlot } from '../adapters/lock/PgAdvisoryLock.js'
 
@@ -290,7 +289,7 @@ async function _monitorPelando(): Promise<void> {
 
     // Send new coupons immediately
     if (newCoupons.length > 0) {
-      const { sendPelandoCouponToChat } = await import('../telegram/bot.js')
+      const { sendPelandoCouponToChat } = await import('../adapters/publishers/TelegramPublisher.js')
       for (const coupon of newCoupons) {
         try {
           await sendPelandoCouponToChat(coupon)
@@ -579,19 +578,19 @@ const sentToday = new Set<string>()
 let roundRobinIndex = 0
 let lastSentSource: string | null = null
 
-// Reset sent list at midnight Brasília time
-cron.schedule('0 0 * * *', () => {
+// Reset sent list at midnight Brasília time — exported for cronLock.ts
+export function resetDailyState(): void {
   sentToday.clear()
   sentTodayLog = []
   roundRobinIndex = 0
   lastSentSource = null
   console.log('[cron] Reset de ofertas enviadas')
-}, { timezone: 'America/Sao_Paulo' })
+}
 
 // Fixed rotation list — always cycles through ALL categories in order
 const ALL_CATEGORIES = Object.keys(CATEGORY_META) as DealCategory[]
 
-async function sendNextSuggestion() {
+export async function sendNextSuggestion() {
   // Distributed lock: prevents multiple processes (e.g. from hot-reload restarts) from all firing at once
   const claimed = await claimAutoSendSlot(13)
   if (!claimed) {
@@ -656,7 +655,4 @@ app.listen(PORT, () => {
     console.warn('[links] ⚠️  BASE_URL não configurado ou é localhost — links curtos não vão funcionar em produção')
   }
   initLinksTable().catch(console.error)
-  cron.schedule('*/30 * * * *', refreshDeals, { timezone: 'America/Sao_Paulo' })
-  cron.schedule('*/30 * * * *', monitorPelando, { timezone: 'America/Sao_Paulo' })
-  cron.schedule('*/15 7-22 * * *', sendNextSuggestion, { timezone: 'America/Sao_Paulo' })
 })

@@ -3,14 +3,14 @@ import { Telegraf, Scenes, session, Markup } from 'telegraf'
 import type { WizardContext } from 'telegraf/scenes'
 import { createReadStream } from 'fs'
 import { resolve } from 'path'
-import { scrapeProduct, quickFetchProduct, type ProductData } from '../adapters/scrapers/ProductScraper.js'
-import { buildMessagePayload, fmt } from '../adapters/publishers/format.js'
-import { sendOfferMessage } from '../adapters/publishers/WhatsAppPublisher.js'
-import { generateAffiliateLink, fetchShopeeProductByUrl, expandShortLink, CATEGORY_META, type SubIds, type DealCategory } from '../adapters/affiliates/ShopeeAffiliate.js'
-import { injectAmazonTag, isAmazonUrl } from '../adapters/affiliates/AmazonAffiliate.js'
-import { injectMLTag, isMercadoLivreUrl, fetchMLProductInfo, resolveMLShortLink } from '../adapters/affiliates/MLAffiliate.js'
-import { type UnifiedDeal } from '../server/index.js'
-import { createLink, cleanupLinks, truncateLinks, markDealVote, updateLinkImage } from '../adapters/db/PgLinkRepository.js'
+import { scrapeProduct, quickFetchProduct, type ProductData } from '../scrapers/ProductScraper.js'
+import { buildMessagePayload, fmt } from './format.js'
+import { sendOfferMessage } from './WhatsAppPublisher.js'
+import { generateAffiliateLink, fetchShopeeProductByUrl, expandShortLink, CATEGORY_META, type SubIds, type DealCategory } from '../affiliates/ShopeeAffiliate.js'
+import { injectAmazonTag, isAmazonUrl } from '../affiliates/AmazonAffiliate.js'
+import { injectMLTag, isMercadoLivreUrl, fetchMLProductInfo, resolveMLShortLink } from '../affiliates/MLAffiliate.js'
+import { type UnifiedDeal } from '../../web/server.js'
+import { createLink, cleanupLinks, truncateLinks, markDealVote, updateLinkImage } from '../db/PgLinkRepository.js'
 
 import type { Telegram } from 'telegraf'
 let telegramApi: Telegram | null = null
@@ -511,7 +511,7 @@ couponWizard.action(/^coupon_(telegram|whatsapp|both|cancel)$/, async (ctx) => {
     }
 
     if (dest === 'whatsapp' || dest === 'both') {
-      const payload: import('../adapters/publishers/format.js').MessagePayload = {
+      const payload: import('./format.js').MessagePayload = {
         name:         `🎟️ CUPOM: ${couponCode}`,
         price:        couponDiscount!,
         coupon:       couponMinimum ? `Mínimo: ${couponMinimum}` : ' ',
@@ -617,7 +617,7 @@ export function createBot() {
   bot.command('atualizar', async (ctx) => {
     const status = await ctx.reply('🔄 Buscando novas ofertas (Shopee + ML + Pelando)...')
     try {
-      const { refreshDeals, monitorPelando, monitorML, getCachedDeals } = await import('../server/index.js')
+      const { refreshDeals, monitorPelando, monitorML, getCachedDeals } = await import('../../web/server.js')
       await Promise.all([refreshDeals(), monitorPelando(), monitorML()])
       const count = getCachedDeals().length
       await ctx.telegram.editMessageText(
@@ -632,7 +632,7 @@ export function createBot() {
 
   // Reusable: send up to `limit` random deals from a category
   async function sendCategoryDeals(ctx: Ctx, category: DealCategory, limit = 5) {
-    const { getCachedDeals } = await import('../server/index.js')
+    const { getCachedDeals } = await import('../../web/server.js')
     const deals = getCachedDeals()
     const pool = deals.filter(d => d.category === category)
 
@@ -651,7 +651,7 @@ export function createBot() {
   }
 
   bot.command('ofertas', async (ctx) => {
-    const { getCachedDeals } = await import('../server/index.js')
+    const { getCachedDeals } = await import('../../web/server.js')
     const deals = getCachedDeals()
     if (!deals.length) {
       await ctx.reply('🔍 Nenhuma oferta no momento. Tente /atualizar.')
@@ -673,7 +673,7 @@ export function createBot() {
   }
 
   bot.command('amazon', async (ctx) => {
-    const { getCachedDeals } = await import('../server/index.js')
+    const { getCachedDeals } = await import('../../web/server.js')
     const deals = getCachedDeals()
     const pool = deals.filter(d => d.source === 'amazon')
     if (!pool.length) {
@@ -689,7 +689,7 @@ export function createBot() {
   })
 
   bot.command('meli', async (ctx) => {
-    const { getCachedDeals } = await import('../server/index.js')
+    const { getCachedDeals } = await import('../../web/server.js')
     const deals = getCachedDeals()
     const pool = deals.filter(d => d.source === 'mercado-livre')
     if (!pool.length) {
@@ -722,7 +722,7 @@ export function createBot() {
       const orig = deal.originalPrice ?? ''
       const priceFormatted = orig ? `~${orig}~ ${deal.price}` : deal.price
 
-      const payload: import('../adapters/publishers/format.js').MessagePayload = {
+      const payload: import('./format.js').MessagePayload = {
         name: deal.title.slice(0, 60),
         price: priceFormatted,
         coupon: ' ',
@@ -1076,7 +1076,7 @@ function getCouponStoreUrl(store: string): { url: string; label: string } | null
   return null
 }
 
-export async function sendPelandoCouponToChat(deal: import('../adapters/scrapers/PelandoScraper.js').PelandoDeal): Promise<void> {
+export async function sendPelandoCouponToChat(deal: import('../scrapers/PelandoScraper.js').PelandoDeal): Promise<void> {
   const chatIds = getTargetChatIds()
   if (!telegramApi || chatIds.length === 0) throw new Error('Bot não configurado')
 
