@@ -10,7 +10,7 @@ import { generateAffiliateLink, fetchShopeeProductByUrl, expandShortLink, CATEGO
 import { injectAmazonTag, isAmazonUrl } from '../adapters/affiliates/AmazonAffiliate.js'
 import { injectMLTag, isMercadoLivreUrl, fetchMLProductInfo, resolveMLShortLink } from '../adapters/affiliates/MLAffiliate.js'
 import { type UnifiedDeal } from '../server/index.js'
-import { createLink, cleanupLinks, truncateLinks, markDealVote, updateLinkImage } from '../server/links.js'
+import { createLink, cleanupLinks, truncateLinks, markDealVote, updateLinkImage } from '../adapters/db/PgLinkRepository.js'
 
 import type { Telegram } from 'telegraf'
 let telegramApi: Telegram | null = null

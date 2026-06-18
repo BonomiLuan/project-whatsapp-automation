@@ -15,7 +15,8 @@ import { fetchShopeeDeals, generateAffiliateLink, CATEGORY_META, type SubIds, ty
 import { fetchMLProductInfo, injectMLTag } from '../adapters/affiliates/MLAffiliate.js'
 import { quickFetchProduct } from '../adapters/scrapers/ProductScraper.js'
 import { createBot, sendProductToChat, sendDealToChat } from '../telegram/bot.js'
-import { initLinksTable, withCronLock, getLink, getLinkImageData, claimAutoSendSlot, incrementClick, getLinks, isSsrfAllowed, buildExpiredRedirectUrl, recordDealSent, getExcludedDealIds, type LinkEntry } from './links.js'
+import { initLinksTable, getLink, getLinkImageData, incrementClick, getLinks, isSsrfAllowed, buildExpiredRedirectUrl, recordDealSent, getExcludedDealIds, type LinkEntry } from '../adapters/db/PgLinkRepository.js'
+import { withCronLock, claimAutoSendSlot } from '../adapters/lock/PgAdvisoryLock.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const app = express()
