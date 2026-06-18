@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isSsrfAllowed, buildExpiredRedirectUrl } from '../src/server/links.js'
+import { isSsrfAllowed, buildExpiredRedirectUrl } from '../src/adapters/db/PgLinkRepository.js'
 
 describe('isSsrfAllowed', () => {
   it('allows shopee CDN image URL', () => {
