@@ -53,9 +53,9 @@ Plans:
 - [x] 02-01-PLAN.md — Core skeleton: domain types + 10 port interfaces + NodeCronScheduler stub + directory scaffold
 - [x] 02-02-PLAN.md — Leaf adapters: AmazonAffiliate, MLAffiliate, ShopeeAffiliate, HistoryRepository moves
 - [x] 02-03-PLAN.md — Second-tier moves: format.ts, WhatsAppPublisher, ProductScraper
-- [ ] 02-04-PLAN.md — Scraper moves: PelandoScraper, MercadoLivreScraper (with dynamic import fix)
+- [x] 02-04-PLAN.md — Scraper moves: PelandoScraper, MercadoLivreScraper (with dynamic import fix)
 - [x] 02-05-PLAN.md — links.ts split: PgLinkRepository + PgAdvisoryLock + pool.ts
-- [ ] 02-06-PLAN.md — God-file moves: TelegramPublisher, web/server.ts, jobs extraction, composition root + package.json
+- [x] 02-06-PLAN.md — God-file moves: TelegramPublisher, web/server.ts, jobs extraction, composition root + package.json
 
 **UI hint**: no
 
@@ -86,7 +86,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 03-05-PLAN.md — Composition root wiring + reduce god-files to wiring (jobs DI, server.ts business logic removed)
+- [x] 03-05-PLAN.md — Composition root wiring + reduce god-files to wiring (jobs DI, server.ts business logic removed)
 
 **UI hint**: no
 
@@ -103,7 +103,22 @@ Plans:
   4. API REST responde: `GET /api/tenants` (200), `GET /api/config` (200), `GET /api/deals` (200)
   5. `AffiliateLinkBuilder` composite integra Amazon, ML e Shopee via port no use case `SuggestDeals`
 
-**Plans**: TBD
+**Plans**: 4 plans
+
+Plans:
+**Wave 1** *(paralelos — sem dependências entre si)*
+
+- [ ] 04-01-PLAN.md — node-pg-migrate install + migration 001_initial_schema (4 tabelas) + migration 002_seed_default_tenant
+- [ ] 04-02-PLAN.md — Affiliate wrapper classes (Amazon/ML/Shopee) + CompositeAffiliateLinkBuilder com testes
+
+**Wave 2** *(blocked on 04-01)*
+
+- [ ] 04-03-PLAN.md — PgRotationStore com testes + SuggestDeals recebe AffiliateLinkBuilder como 4° parâmetro opcional
+
+**Wave 3** *(blocked on 04-01, 04-02, 04-03)*
+
+- [ ] 04-04-PLAN.md — Composition root wiring (boot runner, PgRotationStore, CompositeAffiliateLinkBuilder) + REST routes GET/PATCH /api/config e GET /api/tenants
+
 **UI hint**: no
 
 ---
@@ -115,9 +130,9 @@ Plans:
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 1. Link Curto WhatsApp | v1.0 | 5/5 | Complete | 2026-06-16 |
-| 2. Hexagonal Structure | v2.0 | 4/6 | In Progress|  |
-| 3. Core Domain Extraction | v2.0 | 4/5 | In Progress|  |
-| 4. Multi-Tenancy | v2.0 | 0/TBD | Not started | - |
+| 2. Hexagonal Structure | v2.0 | 6/6 | Complete | 2026-06-20 |
+| 3. Core Domain Extraction | v2.0 | 5/5 | Complete | 2026-06-20 |
+| 4. Multi-Tenancy | v2.0 | 0/4 | Not started | - |
 
 ---
 *Roadmap created: 2026-06-17 for milestone v2.0*
