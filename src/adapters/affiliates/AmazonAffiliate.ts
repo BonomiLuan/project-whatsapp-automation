@@ -41,3 +41,18 @@ export async function injectAmazonTag(url: string): Promise<string> {
 export function isAmazonUrl(url: string): boolean {
   return url.includes('amazon.com.br') || url.includes('amzn.to') || url.includes('a.co')
 }
+
+import type { AffiliateLinkBuilder } from '../../core/ports/AffiliateLinkBuilder.js'
+import type { Deal, Marketplace } from '../../core/domain/Deal.js'
+import type { AffiliateConfig } from '../../core/domain/Tenant.js'
+
+export class AmazonAffiliateLinkBuilder implements AffiliateLinkBuilder {
+  supports(marketplace: Marketplace): boolean {
+    return marketplace === 'amazon'
+  }
+
+  async build(deal: Deal, _config: AffiliateConfig): Promise<Deal> {
+    const url = await injectAmazonTag(deal.url)
+    return { ...deal, url }
+  }
+}

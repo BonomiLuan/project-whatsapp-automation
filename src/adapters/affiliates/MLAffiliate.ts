@@ -410,6 +410,21 @@ export function buildMLSearchUrl(title: string): string {
   return 'https://www.mercadolivre.com.br/jm/search?as_word=' + encodeURIComponent(title) + '&matt_tool=' + PUBLISHER_ID + '&matt_word=' + MATT_WORD
 }
 
+import type { AffiliateLinkBuilder } from '../../core/ports/AffiliateLinkBuilder.js'
+import type { Deal, Marketplace } from '../../core/domain/Deal.js'
+import type { AffiliateConfig } from '../../core/domain/Tenant.js'
+
+export class MLAffiliateLinkBuilder implements AffiliateLinkBuilder {
+  supports(marketplace: Marketplace): boolean {
+    return marketplace === 'mercadolivre'
+  }
+
+  async build(deal: Deal, _config: AffiliateConfig): Promise<Deal> {
+    const url = await injectMLTag(deal.url)
+    return { ...deal, url }
+  }
+}
+
 export async function fetchMLDealsByKeyword(keyword: string, limit = 10): Promise<MLDeal[]> {
   console.log(`[ml:deals] buscando "${keyword}" (limit=${limit})`)
   try {
