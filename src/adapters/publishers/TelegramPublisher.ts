@@ -1095,7 +1095,6 @@ export class TelegramPublisher implements DealPublisher {
     }
 
     const groupUrl = process.env.WHATSAPP_GROUP_URL || ''
-    const marketplace = deal.marketplace as string
     const emoji = (CATEGORY_META as Record<string, { emoji: string }>)[deal.category]?.emoji ?? '🛍️'
 
     const priceFormatted = `R$${deal.price.toFixed(2).replace('.', ',')}`
@@ -1103,13 +1102,27 @@ export class TelegramPublisher implements DealPublisher {
       ? `R$${deal.originalPrice.toFixed(2).replace('.', ',')}`
       : undefined
 
+    // Generate short link for tracking (ofertas.thaisbonomi.com.br/r/CODE)
+    let buyUrl = deal.url
+    try {
+      const sourceMap: Record<string, 'shopee' | 'amazon' | 'ml'> = { mercadolivre: 'ml', shopee: 'shopee', amazon: 'amazon' }
+      const imageForLink = (deal.imageUrl ?? '').includes('pelando.com.br') ? '' : (deal.imageUrl ?? '')
+      const link = await createLink({
+        title: deal.title,
+        image_url: imageForLink,
+        affiliate_url: deal.url,
+        source: sourceMap[deal.marketplace] ?? 'amazon',
+      })
+      buyUrl = (process.env.BASE_URL || '') + '/r/' + link.code
+    } catch { /* fallback to deal.url */ }
+
     const text = formatMessage({
       emoji,
       title: deal.title,
       originalPrice: originalPriceFormatted,
       price: priceFormatted,
       coupon: deal.couponCode,
-      buyUrl: deal.url,
+      buyUrl,
       groupUrl,
     })
 
