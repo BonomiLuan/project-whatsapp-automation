@@ -44,11 +44,11 @@ Plans:
 **Plans**: 6 plans
 
 Plans:
-- [ ] 02-01-PLAN.md — Core skeleton: domain types + 10 port interfaces + NodeCronScheduler stub + directory scaffold
-- [ ] 02-02-PLAN.md — Leaf adapters: AmazonAffiliate, MLAffiliate, ShopeeAffiliate, HistoryRepository moves
-- [ ] 02-03-PLAN.md — Second-tier moves: format.ts, WhatsAppPublisher, ProductScraper
+- [x] 02-01-PLAN.md — Core skeleton: domain types + 10 port interfaces + NodeCronScheduler stub + directory scaffold
+- [x] 02-02-PLAN.md — Leaf adapters: AmazonAffiliate, MLAffiliate, ShopeeAffiliate, HistoryRepository moves
+- [x] 02-03-PLAN.md — Second-tier moves: format.ts, WhatsAppPublisher, ProductScraper
 - [ ] 02-04-PLAN.md — Scraper moves: PelandoScraper, MercadoLivreScraper (with dynamic import fix)
-- [ ] 02-05-PLAN.md — links.ts split: PgLinkRepository + PgAdvisoryLock + pool.ts
+- [x] 02-05-PLAN.md — links.ts split: PgLinkRepository + PgAdvisoryLock + pool.ts
 - [ ] 02-06-PLAN.md — God-file moves: TelegramPublisher, web/server.ts, jobs extraction, composition root + package.json
 
 **UI hint**: no
@@ -62,7 +62,15 @@ Plans:
   2. Use cases `FilterDeals` e `MonitorDeals` vivem em `src/core/usecases/` com testes unitários passando
   3. Ports `DealRepository` e `DealPublisher` têm implementações adapter concretas e testadas
   4. God-files (`bot.ts`, `index.ts`, `pelando.ts`) não contêm lógica de negócio inline — apenas wiring de dependências
-**Plans**: TBD
+**Plans**: 5 plans
+
+Plans:
+- [ ] 03-01-PLAN.md — Pure-logic safety net: filterDeals + CategoryRotation + formatMessage helper, each with characterization tests (D-01c)
+- [ ] 03-02-PLAN.md — Leaf adapters: PgAdvisoryLock implements Lock, InMemoryRotationStore, real PgDealRepository + PgTenantRepository SQL
+- [ ] 03-03-PLAN.md — Core use cases: MonitorDeals + SuggestDeals with fake-port unit tests
+- [ ] 03-04-PLAN.md — Adapter port adoption: TelegramPublisher implements DealPublisher, scrapers implement DealScraper (toDeal)
+- [ ] 03-05-PLAN.md — Composition root wiring + reduce god-files to wiring (jobs DI, server.ts business logic removed)
+
 **UI hint**: no
 
 ### Phase 4: Multi-Tenancy
@@ -87,8 +95,8 @@ Plans:
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 1. Link Curto WhatsApp | v1.0 | 5/5 | Complete | 2026-06-16 |
-| 2. Hexagonal Structure | v2.0 | 0/6 | Not started | - |
-| 3. Core Domain Extraction | v2.0 | 0/TBD | Not started | - |
+| 2. Hexagonal Structure | v2.0 | 4/6 | In Progress|  |
+| 3. Core Domain Extraction | v2.0 | 0/5 | Not started | - |
 | 4. Multi-Tenancy | v2.0 | 0/TBD | Not started | - |
 
 ---
