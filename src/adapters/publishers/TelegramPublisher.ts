@@ -615,7 +615,10 @@ export function createBot() {
     const status = await ctx.reply('🔍 Verificando deals Pelando...')
     try {
       await _pelandoTrigger()
-      await ctx.telegram.editMessageText(ctx.chat!.id, status.message_id, undefined, '✅ Monitor Pelando executado!')
+      await ctx.telegram.editMessageText(
+        ctx.chat!.id, status.message_id, undefined,
+        '✅ 5 ofertas enviadas! Use /pelando novamente para ver mais.'
+      )
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Erro desconhecido'
       await ctx.telegram.editMessageText(ctx.chat!.id, status.message_id, undefined, `❌ ${msg}`)

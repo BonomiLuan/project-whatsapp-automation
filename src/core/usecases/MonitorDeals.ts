@@ -23,7 +23,7 @@ export class MonitorDeals {
     private readonly tenantRepo: TenantRepository,
   ) {}
 
-  async execute(category?: string): Promise<void> {
+  async execute(category?: string, limit?: number): Promise<void> {
     const deals = await this.scraper.fetchDeals(category)
     const tenants = await this.tenantRepo.findAll()
 
@@ -33,8 +33,9 @@ export class MonitorDeals {
       // Exclude already-sent deals, then apply tenant filters
       const fresh = deals.filter(d => !sentIds.has(d.id))
       const filtered = filterDeals(fresh, tenant.filters)
+      const batch = limit !== undefined ? filtered.slice(0, limit) : filtered
 
-      for (const deal of filtered) {
+      for (const deal of batch) {
         // Per-deal isolation: a single failure must not abort the whole tenant batch
         try {
           await this.publisher.publish(deal, tenant)

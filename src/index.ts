@@ -36,7 +36,7 @@ const mlMonitor = new MonitorDeals(mlScraper, telegramPublisher, dealRepo, tenan
 const suggest = new SuggestDeals(rotationStore, dealRepo, telegramPublisher)
 
 // ── Wire bot commands ─────────────────────────────────────────────────────────
-setPelandoTrigger(() => pelandoMonitor.execute())
+setPelandoTrigger(() => pelandoMonitor.execute(undefined, 5))
 
 // ── Register jobs ─────────────────────────────────────────────────────────────
 registerPelandoMonitor(scheduler, lock, pelandoMonitor)
