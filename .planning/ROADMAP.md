@@ -81,8 +81,8 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 03-03-PLAN.md — Core use cases: MonitorDeals + SuggestDeals with fake-port unit tests
-- [ ] 03-04-PLAN.md — Adapter port adoption: TelegramPublisher implements DealPublisher, scrapers implement DealScraper (toDeal)
+- [x] 03-03-PLAN.md — Core use cases: MonitorDeals + SuggestDeals with fake-port unit tests
+- [x] 03-04-PLAN.md — Adapter port adoption: TelegramPublisher implements DealPublisher, scrapers implement DealScraper (toDeal)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -116,7 +116,7 @@ Plans:
 |-------|-----------|----------------|--------|-----------|
 | 1. Link Curto WhatsApp | v1.0 | 5/5 | Complete | 2026-06-16 |
 | 2. Hexagonal Structure | v2.0 | 4/6 | In Progress|  |
-| 3. Core Domain Extraction | v2.0 | 2/5 | In Progress|  |
+| 3. Core Domain Extraction | v2.0 | 4/5 | In Progress|  |
 | 4. Multi-Tenancy | v2.0 | 0/TBD | Not started | - |
 
 ---
