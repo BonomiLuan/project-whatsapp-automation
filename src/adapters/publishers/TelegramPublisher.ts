@@ -18,6 +18,11 @@ import { formatMessage } from '../../core/usecases/helpers/formatMessage.js'
 
 import type { Telegram } from 'telegraf'
 let telegramApi: Telegram | null = null
+let _pelandoTrigger: (() => Promise<void>) | undefined
+
+export function setPelandoTrigger(fn: () => Promise<void>): void {
+  _pelandoTrigger = fn
+}
 
 interface WizardState {
   product?: ProductData
@@ -546,6 +551,7 @@ export function createBot() {
     '/meli — 🛒 Ofertas Mercado Livre do momento',
     '/cupom — 🎟️ Montar e enviar um cupom Shopee',
     '/atualizar — buscar novas ofertas agora',
+    '/pelando — disparar monitor Pelando agora',
     '/feedback — ver resumo de curtidas e irrelevantes',
     '/ajuda — mostrar esta mensagem',
     '',
@@ -595,6 +601,21 @@ export function createBot() {
         ctx.chat!.id, status.message_id, undefined,
         `✅ ${count} ofertas atualizadas! Use /ofertas para ver.`
       )
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Erro desconhecido'
+      await ctx.telegram.editMessageText(ctx.chat!.id, status.message_id, undefined, `❌ ${msg}`)
+    }
+  })
+
+  bot.command('pelando', async (ctx) => {
+    if (!_pelandoTrigger) {
+      await ctx.reply('⚠️ Monitor Pelando não configurado')
+      return
+    }
+    const status = await ctx.reply('🔍 Verificando deals Pelando...')
+    try {
+      await _pelandoTrigger()
+      await ctx.telegram.editMessageText(ctx.chat!.id, status.message_id, undefined, '✅ Monitor Pelando executado!')
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Erro desconhecido'
       await ctx.telegram.editMessageText(ctx.chat!.id, status.message_id, undefined, `❌ ${msg}`)
@@ -821,6 +842,7 @@ export function createBot() {
     { command: 'meli', description: '🛒 Ofertas Mercado Livre do momento' },
     { command: 'cupom', description: '🎟️ Montar e enviar um cupom Shopee' },
     { command: 'atualizar', description: 'Buscar novas ofertas agora' },
+    { command: 'pelando', description: '🔍 Disparar monitor Pelando agora' },
     { command: 'limpar', description: '🧹 Limpar links expirados do banco' },
     { command: 'feedback', description: '📊 Ver resumo de curtidas e irrelevantes' },
     { command: 'ajuda', description: 'Ver todos os comandos' },

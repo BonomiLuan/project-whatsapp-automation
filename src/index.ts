@@ -18,6 +18,7 @@ import { SuggestDeals } from './core/usecases/SuggestDeals.js'
 import { registerPelandoMonitor } from './jobs/monitorPelando.js'
 import { registerMLMonitor } from './jobs/monitorML.js'
 import { registerSuggestionJobs } from './jobs/cronLock.js'
+import { setPelandoTrigger } from './adapters/publishers/TelegramPublisher.js'
 
 // ── Instantiate adapters ──────────────────────────────────────────────────────
 const lock = new PgAdvisoryLock()
@@ -33,6 +34,9 @@ const scheduler = new NodeCronScheduler()
 const pelandoMonitor = new MonitorDeals(pelandoScraper, telegramPublisher, dealRepo, tenantRepo)
 const mlMonitor = new MonitorDeals(mlScraper, telegramPublisher, dealRepo, tenantRepo)
 const suggest = new SuggestDeals(rotationStore, dealRepo, telegramPublisher)
+
+// ── Wire bot commands ─────────────────────────────────────────────────────────
+setPelandoTrigger(() => pelandoMonitor.execute())
 
 // ── Register jobs ─────────────────────────────────────────────────────────────
 registerPelandoMonitor(scheduler, lock, pelandoMonitor)
