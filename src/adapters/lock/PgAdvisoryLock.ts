@@ -1,4 +1,28 @@
 import { pool } from '../db/pool.js'
+import type { Lock } from '../../core/ports/Lock.js'
+
+// ---------------------------------------------------------------------------
+// FNV-32 hash — deterministic mapping of string keys to advisory lock integers
+// ---------------------------------------------------------------------------
+
+export function hashKey(key: string): number {
+  let hash = 0x811c9dc5 >>> 0
+  for (let i = 0; i < key.length; i++) {
+    hash ^= key.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193) >>> 0
+  }
+  return hash % (2 ** 31)
+}
+
+// ---------------------------------------------------------------------------
+// PgAdvisoryLock — implements the Lock port using Postgres advisory locks
+// ---------------------------------------------------------------------------
+
+export class PgAdvisoryLock implements Lock {
+  async withLock<T>(key: string, fn: () => Promise<T>): Promise<T | null> {
+    return withCronLock(hashKey(key), fn)
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Advisory lock helpers — prevent concurrent cron execution across instances
