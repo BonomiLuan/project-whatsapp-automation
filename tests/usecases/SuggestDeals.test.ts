@@ -144,20 +144,28 @@ describe('SuggestDeals', () => {
     const diffDeal = makeDeal({ id: 'diff-source-deal', marketplace: 'pelando', category: 'electronics' })
     const tenant = makeTenant()
 
-    const rotationStore = makeFakeRotationStore({ roundRobinIndex: 0, lastSource: 'amazon' })
-    const dealRepo = makeFakeDealRepo()
-    const publisher = makeFakePublisher()
+    // Run 10 independent executions each with a fresh store starting at lastSource='amazon'
+    // so preferDifferentSource always sees the same initial condition
+    const useCase = new SuggestDeals(
+      makeFakeRotationStore({ roundRobinIndex: 0, lastSource: null }), // will be overridden per run
+      makeFakeDealRepo(),
+      makeFakePublisher(),
+    )
 
-    const useCase = new SuggestDeals(rotationStore, dealRepo, publisher)
-    // Run several times to account for randomness — preferDifferentSource should always prefer pelando
+    const chosenIds: string[] = []
     for (let i = 0; i < 10; i++) {
-      publisher.published.length = 0
-      dealRepo.markedAsSent.length = 0
-      await useCase.execute(tenant, [sameDeal, diffDeal])
+      const rotationStore = makeFakeRotationStore({ roundRobinIndex: 0, lastSource: 'amazon' })
+      const dealRepo = makeFakeDealRepo()
+      const publisher = makeFakePublisher()
+      const run = new SuggestDeals(rotationStore, dealRepo, publisher)
+      await run.execute(tenant, [sameDeal, diffDeal])
+      if (publisher.published.length > 0) {
+        chosenIds.push(publisher.published[0].deal.id)
+      }
     }
 
-    // All 10 runs should choose pelando (different source), never amazon
-    const chosenIds = publisher.published.map(p => p.deal.id)
+    // All 10 independent runs should choose pelando (different source), never amazon
+    expect(chosenIds).toHaveLength(10)
     expect(chosenIds.every(id => id === 'diff-source-deal')).toBe(true)
   })
 
