@@ -18,7 +18,7 @@ function rowToTenant(row: Record<string, unknown>): Tenant {
     name: row['name'] as string,
     active: row['active'] !== undefined ? Boolean(row['active']) : true,
     channels: Array.isArray(row['channels']) ? row['channels'] as Tenant['channels'] : [],
-    filters: (row['filters'] as Tenant['filters']) ?? { minDiscount: 0, categories: [], sources: [] },
+    filters: (row['filters'] as Tenant['filters']) ?? { minDiscount: 0, keywords: [], excludeKeywords: [], categories: [] },
     affiliates: (row['affiliates'] as Tenant['affiliates']) ?? {},
   }
 }

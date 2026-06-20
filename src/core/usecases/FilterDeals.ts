@@ -15,15 +15,15 @@ export function filterDeals(deals: Deal[], filter: Filter): Deal[] {
     const titleLower = deal.title.toLowerCase()
 
     // Exclude keywords gate: remove deals whose title contains any excluded token (case-insensitive substring)
-    for (const token of filter.excludeKeywords) {
+    for (const token of (filter.excludeKeywords ?? [])) {
       if (titleLower.includes(token.toLowerCase())) {
         return false
       }
     }
 
     // Keyword inclusion gate: if keywords list is non-empty, at least one must appear in title
-    if (filter.keywords.length > 0) {
-      const matchesKeyword = filter.keywords.some(kw => titleLower.includes(kw.toLowerCase()))
+    if ((filter.keywords ?? []).length > 0) {
+      const matchesKeyword = (filter.keywords ?? []).some(kw => titleLower.includes(kw.toLowerCase()))
       if (!matchesKeyword) return false
     }
 
