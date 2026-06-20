@@ -14,8 +14,8 @@ import { fetchShopeeDeals, generateAffiliateLink, CATEGORY_META, type SubIds, ty
 import { fetchMLProductInfo, injectMLTag } from '../adapters/affiliates/MLAffiliate.js'
 import { quickFetchProduct } from '../adapters/scrapers/ProductScraper.js'
 import { createBot, sendProductToChat, sendDealToChat } from '../adapters/publishers/TelegramPublisher.js'
-import { initLinksTable, getLink, getLinkImageData, incrementClick, getLinks, isSsrfAllowed, buildExpiredRedirectUrl, recordDealSent, getExcludedDealIds, type LinkEntry } from '../adapters/db/PgLinkRepository.js'
-import { withCronLock, claimAutoSendSlot } from '../adapters/lock/PgAdvisoryLock.js'
+import { initLinksTable, getLink, getLinkImageData, incrementClick, getLinks, isSsrfAllowed, buildExpiredRedirectUrl, type LinkEntry } from '../adapters/db/PgLinkRepository.js'
+import { withCronLock } from '../adapters/lock/PgAdvisoryLock.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const app = express()
@@ -572,84 +572,10 @@ app.get('/api/image-proxy', async (req, res) => {
   }
 })
 
-// ── Deal suggestion rotation ──────────────────────────────────────────────────
-
-const sentToday = new Set<string>()
-let roundRobinIndex = 0
-let lastSentSource: string | null = null
-
-// Reset sent list at midnight Brasília time — exported for cronLock.ts
-export function resetDailyState(): void {
-  sentToday.clear()
-  sentTodayLog = []
-  roundRobinIndex = 0
-  lastSentSource = null
-  console.log('[cron] Reset de ofertas enviadas')
-}
-
-// Fixed rotation list — always cycles through ALL categories in order
-const ALL_CATEGORIES = Object.keys(CATEGORY_META) as DealCategory[]
-
-export async function sendNextSuggestion() {
-  // Distributed lock: prevents multiple processes (e.g. from hot-reload restarts) from all firing at once
-  const claimed = await claimAutoSendSlot(13)
-  if (!claimed) {
-    console.log('[suggest] Outra instância já enviou recentemente, pulando')
-    return
-  }
-
-  const dbExcluded = await getExcludedDealIds(7)
-  const excluded = new Set([...sentToday, ...dbExcluded])
-  const available = dealsCache.filter(d => !excluded.has(d.id))
-  if (!available.length) {
-    console.log('[suggest] Todos os produtos já enviados hoje')
-    return
-  }
-
-  // Walk the fixed category list until we find one with available deals
-  let deal: UnifiedDeal | undefined
-  let attempts = 0
-  while (!deal && attempts < ALL_CATEGORIES.length) {
-    const cat = ALL_CATEGORIES[roundRobinIndex % ALL_CATEGORIES.length]
-    roundRobinIndex++
-    attempts++
-    const pool = available.filter(d => d.category === cat)
-    if (pool.length > 0) {
-      // Pick randomly within the category for variety
-      deal = pool[Math.floor(Math.random() * pool.length)]
-    }
-  }
-
-  // Fallback: pick any random available deal
-  if (!deal) deal = available[Math.floor(Math.random() * available.length)]
-
-  // Variedade de fonte: se o candidato é da mesma fonte que o último enviado,
-  // prefere uma fonte diferente (shopee → amazon → shopee etc.)
-  if (deal && lastSentSource && deal.source === lastSentSource) {
-    const altPool = available.filter(d => d.source !== lastSentSource)
-    if (altPool.length > 0) {
-      deal = altPool[Math.floor(Math.random() * altPool.length)]
-    }
-  }
-
-  try {
-    await sendDealToChat(deal)
-    sentToday.add(deal.id)
-    lastSentSource = deal.source
-    sentTodayLog.push({ ...deal, sentAt: new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) })
-    dealsCache = dealsCache.filter(d => d.id !== deal!.id)
-    recordDealSent(deal.id, deal.title, deal.category).catch(() => {})
-    console.log(`[suggest] ✓ [${deal.source}] ${deal.category} — ${deal.title.slice(0, 40)}`)
-  } catch (err) {
-    console.error('[suggest] Erro:', err instanceof Error ? err.message : err)
-  }
-}
-
 app.listen(PORT, () => {
   console.log(`\n✅ Servidor rodando em http://localhost:${PORT}`)
   createBot()
   refreshDeals()
-  monitorPelando()
   const baseUrl = process.env.BASE_URL || ''
   if (!baseUrl || baseUrl.includes('localhost')) {
     console.warn('[links] ⚠️  BASE_URL não configurado ou é localhost — links curtos não vão funcionar em produção')

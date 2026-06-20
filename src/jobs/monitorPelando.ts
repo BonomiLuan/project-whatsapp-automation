@@ -1,4 +1,19 @@
-import cron from 'node-cron'
-import { monitorPelando } from '../web/server.js'
+import type { Scheduler } from '../core/ports/Scheduler.js'
+import type { Lock } from '../core/ports/Lock.js'
+import type { MonitorDeals } from '../core/usecases/MonitorDeals.js'
 
-cron.schedule('*/30 * * * *', monitorPelando, { timezone: 'America/Sao_Paulo' })
+/**
+ * registerPelandoMonitor — wires the Pelando monitor into the scheduler.
+ * No cron runs at import time; the caller (composition root) controls lifecycle.
+ */
+export function registerPelandoMonitor(
+  scheduler: Scheduler,
+  lock: Lock,
+  monitor: MonitorDeals,
+): void {
+  scheduler.schedule(
+    'pelando-monitor',
+    '*/30 * * * *',
+    () => lock.withLock('monitor:pelando', () => monitor.execute()).then(() => void 0),
+  )
+}
