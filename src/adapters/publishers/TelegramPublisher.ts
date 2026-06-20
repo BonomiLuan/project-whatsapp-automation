@@ -11,6 +11,10 @@ import { injectAmazonTag, isAmazonUrl } from '../affiliates/AmazonAffiliate.js'
 import { injectMLTag, isMercadoLivreUrl, fetchMLProductInfo, resolveMLShortLink } from '../affiliates/MLAffiliate.js'
 import { type UnifiedDeal } from '../../web/server.js'
 import { createLink, cleanupLinks, truncateLinks, markDealVote, updateLinkImage } from '../db/PgLinkRepository.js'
+import type { DealPublisher } from '../../core/ports/DealPublisher.js'
+import type { Deal, Marketplace } from '../../core/domain/Deal.js'
+import type { Tenant } from '../../core/domain/Tenant.js'
+import { formatMessage } from '../../core/usecases/helpers/formatMessage.js'
 
 import type { Telegram } from 'telegraf'
 let telegramApi: Telegram | null = null
@@ -28,39 +32,6 @@ interface WizardState {
 type Ctx = WizardContext & { wizard: { state: WizardState } }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-function formatMessage({
-  emoji, title, originalPrice, price, coupon, buyUrl, groupUrl,
-}: {
-  emoji: string
-  title: string
-  originalPrice?: string
-  price?: string
-  coupon?: string
-  buyUrl: string
-  groupUrl: string
-}): string {
-  const priceLine = originalPrice && price
-    ? `~${originalPrice}~ por *${price}*`
-    : price ? `*${price}*` : ''
-
-  return [
-    `${emoji} *${title}*`,
-    ``,
-    priceLine,
-    coupon ? `🎟️ Cupom: *${coupon}*` : '',
-    ``,
-    `🔗 Link para comprar:`,
-    buyUrl,
-    ``,
-    groupUrl ? `💬 Link para o grupo:` : '',
-    groupUrl || '',
-    ``,
-    `⏰ Aproveite enquanto durar!`,
-    ``,
-    `#Anúncio`,
-  ].filter(v => v !== undefined && !(v === '' && !groupUrl)).join('\n').trim()
-}
 
 function buildTelegramText(product: ProductData, coupon: string, groupUrl: string): string {
   return formatMessage({
@@ -1053,6 +1024,84 @@ async function sendDealCard(ctx: Ctx, deal: UnifiedDeal) {
     }
   } catch {
     await ctx.reply(text, buttons)
+  }
+}
+
+// ── DealPublisher port implementation ────────────────────────────────────────
+
+function mapUnifiedDealMarketplace(source: UnifiedDeal['source']): Marketplace {
+  if (source === 'mercado-livre') return 'mercadolivre'
+  return source
+}
+
+export class TelegramPublisher implements DealPublisher {
+  /**
+   * Maps a core Deal back to the UnifiedDeal shape for the existing send path.
+   * UnifiedDeal stays private to this adapter — never re-exported as a core type.
+   */
+  private toDeal(raw: UnifiedDeal): Deal {
+    const priceStr = raw.price.replace(/[^\d,\.]/g, '').replace(',', '.')
+    const price = parseFloat(priceStr) || 0
+
+    let originalPrice: number | undefined
+    if (raw.originalPrice) {
+      const origStr = raw.originalPrice.replace(/[^\d,\.]/g, '').replace(',', '.')
+      const parsed = parseFloat(origStr)
+      if (!isNaN(parsed) && parsed > 0) originalPrice = parsed
+    }
+
+    return {
+      id: raw.id,
+      title: raw.title,
+      price,
+      originalPrice,
+      url: raw.affiliateUrl,
+      imageUrl: raw.imageUrl || undefined,
+      marketplace: mapUnifiedDealMarketplace(raw.source),
+      category: raw.category as string,
+      postedAt: new Date(raw.publishedAt),
+    }
+  }
+
+  async publish(deal: Deal, tenant: Tenant): Promise<void> {
+    const chatIds = tenant.channels
+      .filter(ch => ch.type === 'telegram')
+      .map(ch => ch.channelId)
+
+    if (!telegramApi || chatIds.length === 0) {
+      throw new Error('[TelegramPublisher] Bot ou canais Telegram não configurados')
+    }
+
+    const groupUrl = process.env.WHATSAPP_GROUP_URL || ''
+    const marketplace = deal.marketplace as string
+    const emoji = (CATEGORY_META as Record<string, { emoji: string }>)[deal.category]?.emoji ?? '🛍️'
+
+    const priceFormatted = `R$${deal.price.toFixed(2).replace('.', ',')}`
+    const originalPriceFormatted = deal.originalPrice
+      ? `R$${deal.originalPrice.toFixed(2).replace('.', ',')}`
+      : undefined
+
+    const text = formatMessage({
+      emoji,
+      title: deal.title,
+      originalPrice: originalPriceFormatted,
+      price: priceFormatted,
+      coupon: deal.couponCode,
+      buyUrl: deal.url,
+      groupUrl,
+    })
+
+    for (let i = 0; i < chatIds.length; i++) {
+      if (i > 0) await new Promise(r => setTimeout(r, 60_000))
+      const id = chatIds[i]
+      if (deal.imageUrl) {
+        try {
+          await telegramApi!.sendPhoto(id, deal.imageUrl, { caption: text })
+          continue
+        } catch { /* fallback to text */ }
+      }
+      await telegramApi!.sendMessage(id, text)
+    }
   }
 }
 

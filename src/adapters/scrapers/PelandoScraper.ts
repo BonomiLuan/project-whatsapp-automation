@@ -4,6 +4,8 @@ import StealthPlugin from 'puppeteer-extra-plugin-stealth'
 import { injectAmazonTag } from '../affiliates/AmazonAffiliate.js'
 import { buildMLSearchUrl, injectMLTag, fetchMLProductInfo } from '../affiliates/MLAffiliate.js'
 import { generateAffiliateLink, expandShortLink, fetchShopeeProductByUrl, type SubIds } from '../affiliates/ShopeeAffiliate.js'
+import type { DealScraper } from '../../core/ports/DealScraper.js'
+import type { Deal, Marketplace } from '../../core/domain/Deal.js'
 
 chromium.use(StealthPlugin())
 
@@ -662,4 +664,53 @@ function formatPriceFromProps(item: PelandoRawDeal): string {
     return `R$${item.discountFixed.toFixed(2).replace('.', ',')} OFF`
   }
   return 'Grátis'
+}
+
+// ── DealScraper port implementation ──────────────────────────────────────────
+
+function inferPelandoMarketplace(store: string): Marketplace {
+  const s = store.toLowerCase()
+  if (s.includes('amazon')) return 'amazon'
+  if (s.includes('mercado') || s.includes('mercadolivre') || s === 'ml') return 'mercadolivre'
+  if (s.includes('shopee')) return 'shopee'
+  return 'pelando'
+}
+
+/**
+ * Parses a Brazilian-formatted price string (e.g. "R$1.299,90") into a number.
+ * Strips currency prefix, removes thousands-separator dots, converts comma decimal to dot.
+ * Returns 0 for malformed/non-numeric strings (e.g. "Grátis", "15% OFF").
+ */
+function parseBRPrice(priceStr: string): number {
+  const cleaned = priceStr.replace(/[^\d,.]/g, '')
+  // Brazilian format: dot is thousands separator, comma is decimal separator
+  const normalized = cleaned.replace(/\./g, '').replace(',', '.')
+  return parseFloat(normalized) || 0
+}
+
+/**
+ * Pure toDeal conversion — exported for unit testing without network IO.
+ * Converts a raw PelandoDeal into the core Deal domain type.
+ */
+export function toDealPelando(raw: PelandoDeal): Deal {
+  const price = parseBRPrice(raw.price)
+
+  return {
+    id: raw.id,
+    title: raw.title,
+    price,
+    url: raw.dealUrl,
+    imageUrl: raw.imageUrl || undefined,
+    couponCode: raw.couponCode || undefined,
+    marketplace: inferPelandoMarketplace(raw.store),
+    category: 'geral',
+    postedAt: new Date(raw.publishedAt),
+  }
+}
+
+export class PelandoScraper implements DealScraper {
+  async fetchDeals(_category?: string): Promise<Deal[]> {
+    const raw = await fetchDeals()
+    return raw.map(toDealPelando)
+  }
 }
