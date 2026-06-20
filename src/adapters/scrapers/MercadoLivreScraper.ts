@@ -2,6 +2,8 @@ import { chromium } from 'playwright-extra'
 import StealthPlugin from 'puppeteer-extra-plugin-stealth'
 import { injectMLTag } from '../affiliates/MLAffiliate.js'
 import type { DealCategory } from '../affiliates/ShopeeAffiliate.js'
+import type { DealScraper } from '../../core/ports/DealScraper.js'
+import type { Deal } from '../../core/domain/Deal.js'
 
 chromium.use(StealthPlugin())
 
@@ -215,5 +217,53 @@ export async function fetchMLCategoryDeals(limit = 60): Promise<MLCategoryDeal[]
     return []
   } finally {
     await browser?.close()
+  }
+}
+
+// ── DealScraper port implementation ──────────────────────────────────────────
+
+/**
+ * Parses a Brazilian-formatted price string (e.g. "R$1.299,90") into a number.
+ * Strips currency prefix, removes thousands-separator dots, converts comma decimal to dot.
+ */
+function parseBRPrice(priceStr: string): number {
+  // Remove everything that's not digit, comma, or dot
+  const cleaned = priceStr.replace(/[^\d,.]/g, '')
+  // Brazilian format: dot is thousands separator, comma is decimal separator
+  // e.g. "1.299,90" → remove dots → "1299,90" → replace comma → "1299.90"
+  const normalized = cleaned.replace(/\./g, '').replace(',', '.')
+  return parseFloat(normalized) || 0
+}
+
+/**
+ * Pure toDeal conversion — exported for unit testing without network IO.
+ * Converts a raw MLCategoryDeal into the core Deal domain type.
+ */
+export function toDealML(raw: MLCategoryDeal): Deal {
+  const price = parseBRPrice(raw.price)
+
+  let originalPrice: number | undefined
+  if (raw.originalPrice) {
+    const parsed = parseBRPrice(raw.originalPrice)
+    if (!isNaN(parsed) && parsed > 0) originalPrice = parsed
+  }
+
+  return {
+    id: raw.id,
+    title: raw.title,
+    price,
+    originalPrice,
+    url: raw.affiliateUrl,
+    imageUrl: raw.imageUrl || undefined,
+    marketplace: 'mercadolivre',
+    category: raw.category as string,
+    postedAt: new Date(),
+  }
+}
+
+export class MercadoLivreScraper implements DealScraper {
+  async fetchDeals(_category?: string): Promise<Deal[]> {
+    const raw = await fetchMLCategoryDeals()
+    return raw.map(toDealML)
   }
 }
