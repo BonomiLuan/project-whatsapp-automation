@@ -523,8 +523,6 @@ const CATEGORIES = [
 
 const MIN_TEMPERATURE = 20
 
-const ALLOWED_STORES: string[] = ['amazon', 'mercado livre', 'mercadolivre', 'ml', 'shopee']
-
 export const TOPIC_KEYWORDS: string[] = [
   // Bebê / maternidade
   'fralda', 'bebê', 'bebe', 'infantil', 'maternidade',
@@ -554,6 +552,8 @@ export function isRelevantForNiche(title: string): boolean {
   const lower = title.toLowerCase()
   return TOPIC_KEYWORDS.some(kw => lower.includes(kw))
 }
+
+const ALLOWED_STORES: string[] = ['amazon', 'mercado livre', 'mercadolivre', 'ml', 'shopee']
 
 export async function fetchDeals(): Promise<PelandoDeal[]> {
   const allDeals: PelandoDeal[] = []

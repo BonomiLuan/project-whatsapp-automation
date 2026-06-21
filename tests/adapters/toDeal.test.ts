@@ -167,4 +167,13 @@ describe('isRelevantForNiche', () => {
   it('is case-insensitive', () => {
     expect(isRelevantForNiche('SHAMPOO SEDA 400ml')).toBe(true)
   })
+
+  it('returns false for generic coupon titles — but coupon deals bypass this check in fetchDeals()', () => {
+    // Coupon deals go through the isCouponPrice||isCouponDeal branch which ends
+    // with `continue` before the niche filter is reached. This test documents
+    // that isRelevantForNiche would block these titles if called, but it is not
+    // called for coupon deals.
+    expect(isRelevantForNiche('10% OFF na Amazon')).toBe(false)
+    expect(isRelevantForNiche('R$50 de desconto Shopee')).toBe(false)
+  })
 })
