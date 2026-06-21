@@ -5,8 +5,9 @@ const ENDPOINT = 'https://open-api.affiliate.shopee.com.br/graphql'
 
 // Signature: SHA256(AppId + Timestamp + Payload + Secret)
 function buildAuth(body: string): string {
-  const appId = process.env.SHOPEE_APP_ID!
-  const secret = process.env.SHOPEE_SECRET!
+  const appId = process.env.SHOPEE_APP_ID
+  const secret = process.env.SHOPEE_SECRET
+  if (!appId || !secret) throw new Error('SHOPEE_APP_ID and SHOPEE_SECRET must be set')
   const ts = Math.floor(Date.now() / 1000)
   const factor = `${appId}${ts}${body}${secret}`
   const signature = crypto.createHash('sha256').update(factor).digest('hex')
