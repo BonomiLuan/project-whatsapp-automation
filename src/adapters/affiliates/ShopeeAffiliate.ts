@@ -250,6 +250,21 @@ function toSubIdArray(s: SubIds): string[] {
   return [s.source, s.trigger, s.category, s.slot, date]
 }
 
+import type { AffiliateLinkBuilder } from '../../core/ports/AffiliateLinkBuilder.js'
+import type { Deal, Marketplace } from '../../core/domain/Deal.js'
+import type { AffiliateConfig } from '../../core/domain/Tenant.js'
+
+export class ShopeeAffiliateLinkBuilder implements AffiliateLinkBuilder {
+  supports(marketplace: Marketplace): boolean {
+    return marketplace === 'shopee'
+  }
+
+  async build(deal: Deal, _config: AffiliateConfig): Promise<Deal> {
+    const url = await generateAffiliateLink(deal.url)
+    return { ...deal, url }
+  }
+}
+
 export async function generateAffiliateLink(originUrl: string, subIds?: SubIds): Promise<string> {
   const subIdsArg = subIds
     ? `, subIds: ${JSON.stringify(toSubIdArray(subIds))}`
