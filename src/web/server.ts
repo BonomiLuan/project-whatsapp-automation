@@ -5,6 +5,8 @@ import rateLimit from 'express-rate-limit'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { createHmac, createHash } from 'crypto'
+import type { TenantRepository } from '../core/ports/TenantRepository.js'
+import type { Tenant } from '../core/domain/Tenant.js'
 import { scrapeProduct } from '../adapters/scrapers/ProductScraper.js'
 import { buildMessagePayload } from '../adapters/publishers/format.js'
 import { sendOfferMessage } from '../adapters/publishers/WhatsAppPublisher.js'
@@ -16,6 +18,10 @@ import { quickFetchProduct } from '../adapters/scrapers/ProductScraper.js'
 import { createBot, sendProductToChat, sendDealToChat } from '../adapters/publishers/TelegramPublisher.js'
 import { initLinksTable, getLink, getLinkImageData, incrementClick, getLinks, isSsrfAllowed, buildExpiredRedirectUrl, type LinkEntry } from '../adapters/db/PgLinkRepository.js'
 import { withCronLock } from '../adapters/lock/PgAdvisoryLock.js'
+
+// ── Tenant repository injection ───────────────────────────────────────────────
+let _tenantRepo: TenantRepository | null = null
+export function setTenantRepo(repo: TenantRepository): void { _tenantRepo = repo }
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const app = express()
@@ -547,6 +553,55 @@ app.get('/api/links', async (_req, res) => {
     return res.json(links)
   } catch (err) {
     console.error('[/api/links]', err)
+    return res.status(500).json({ error: 'Erro interno' })
+  }
+})
+
+// GET /api/tenants — list all tenants (protected by /api auth middleware)
+app.get('/api/tenants', async (_req, res) => {
+  if (!_tenantRepo) return res.status(503).json({ error: 'Not initialized' })
+  try {
+    const tenants = await _tenantRepo.findAll()
+    return res.json(tenants)
+  } catch (err) {
+    console.error('[/api/tenants]', err)
+    return res.status(500).json({ error: 'Erro interno' })
+  }
+})
+
+// GET /api/config — get default tenant config (protected by /api auth middleware)
+app.get('/api/config', async (_req, res) => {
+  if (!_tenantRepo) return res.status(503).json({ error: 'Not initialized' })
+  try {
+    const tenant = await _tenantRepo.findById('default')
+    if (!tenant) return res.status(404).json({ error: 'Tenant not found' })
+    return res.json(tenant)
+  } catch (err) {
+    console.error('[/api/config]', err)
+    return res.status(500).json({ error: 'Erro interno' })
+  }
+})
+
+// PATCH /api/config — update default tenant config (protected by /api auth middleware)
+// T-04-09: only allow patching filters, affiliates, channels — never id or active
+app.patch('/api/config', async (req, res) => {
+  if (!_tenantRepo) return res.status(503).json({ error: 'Not initialized' })
+  try {
+    const current = await _tenantRepo.findById('default')
+    if (!current) return res.status(404).json({ error: 'Tenant not found' })
+    const body = req.body as Partial<Tenant>
+    const updated: Tenant = {
+      ...current,
+      filters: body.filters ?? current.filters,
+      affiliates: body.affiliates ?? current.affiliates,
+      channels: body.channels ?? current.channels,
+      id: 'default',
+      active: current.active,
+    }
+    await _tenantRepo.save(updated)
+    return res.json(updated)
+  } catch (err) {
+    console.error('[/api/config PATCH]', err)
     return res.status(500).json({ error: 'Erro interno' })
   }
 })
