@@ -75,7 +75,7 @@ function makeFakeTenantRepo(overrides: Partial<TenantRepository> = {}): TenantRe
     id: 'default',
     name: 'Default Tenant',
     channels: [],
-    filters: { minDiscount: 0, minTemperature: 0, categories: [], keywords: [], blocklist: [] },
+    filters: { minDiscount: 0, categories: [], keywords: [], excludeKeywords: [] },
     affiliates: {},
     active: true,
   }
