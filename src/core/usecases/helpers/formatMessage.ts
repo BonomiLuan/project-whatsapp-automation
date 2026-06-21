@@ -20,8 +20,11 @@ export function formatMessage(args: {
     `🛒 Compre aqui ⬇️`,
     buyUrl,
     ``,
+    `💬 Link do grupo ⬇️`,
     groupUrl ? groupUrl : null,
     groupUrl ? `` : null,
+    ``,
+    `⏰ Aproveite enquanto durar!`,
     `#Anúncio`,
   ]
 
