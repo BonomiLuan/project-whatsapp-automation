@@ -14,7 +14,13 @@
       "Bash(python3 -c \"import sys; data=sys.stdin.read\\(\\); print\\(repr\\(data[:500]\\)\\)\")",
       "Bash(python3 *)",
       "WebSearch",
-      "mcp__plugin_claude-mem_mcp-search__search"
+      "mcp__plugin_claude-mem_mcp-search__search",
+      "Bash(pm2 list *)",
+      "Read(//Users/bonomiluan/.claude/**)",
+      "mcp__plugin_context-mode_context-mode__ctx_stats",
+      "Bash(pm2 logs *)",
+      "Skill(gsd-phase)",
+      "mcp__plugin_claude-mem_mcp-search__get_observations"
     ],
     "additionalDirectories": [
       "/Users/bonomiluan/repository/api-whatsapp"

@@ -2,14 +2,14 @@
   "name": "api-whatsapp",
   "version": "1.0.0",
   "description": "WhatsApp affiliate offer sender via Meta Cloud API",
-  "main": "dist/server/index.js",
+  "main": "dist/index.js",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/server/index.ts",
+    "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "start": "node dist/server/index.js",
-    "scrape:test": "tsx src/scraper/test.ts",
-    "test": "vitest run --reporter=verbose"
+    "start": "node dist/index.js",
+"test": "vitest run --reporter=verbose",
+    "migrate": "node-pg-migrate up"
   },
   "keywords": [],
   "author": "",
@@ -21,6 +21,7 @@
     "express": "^5.2.1",
     "express-rate-limit": "^8.5.2",
     "node-cron": "^4.2.1",
+    "node-pg-migrate": "^8.0.4",
     "pg": "^8.21.0",
     "playwright": "^1.60.0",
     "playwright-extra": "^4.3.6",
