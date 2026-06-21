@@ -108,8 +108,8 @@ Plans:
 Plans:
 **Wave 1** *(paralelos — sem dependências entre si)*
 
-- [ ] 04-01-PLAN.md — node-pg-migrate install + migration 001_initial_schema (4 tabelas) + migration 002_seed_default_tenant
-- [ ] 04-02-PLAN.md — Affiliate wrapper classes (Amazon/ML/Shopee) + CompositeAffiliateLinkBuilder com testes
+- [x] 04-01-PLAN.md — node-pg-migrate install + migration 001_initial_schema (4 tabelas) + migration 002_seed_default_tenant
+- [x] 04-02-PLAN.md — Affiliate wrapper classes (Amazon/ML/Shopee) + CompositeAffiliateLinkBuilder com testes
 
 **Wave 2** *(blocked on 04-01)*
 
@@ -132,7 +132,7 @@ Plans:
 | 1. Link Curto WhatsApp | v1.0 | 5/5 | Complete | 2026-06-16 |
 | 2. Hexagonal Structure | v2.0 | 6/6 | Complete | 2026-06-20 |
 | 3. Core Domain Extraction | v2.0 | 5/5 | Complete | 2026-06-20 |
-| 4. Multi-Tenancy | v2.0 | 0/4 | Not started | - |
+| 4. Multi-Tenancy | v2.0 | 2/4 | In Progress|  |
 
 ---
 *Roadmap created: 2026-06-17 for milestone v2.0*
