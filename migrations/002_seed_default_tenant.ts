@@ -10,25 +10,18 @@ export async function up(pgm: MigrationBuilder): Promise<void> {
     .map(s => s.trim())
     .filter(Boolean)
 
-  const channels = chatIds.map(id => ({ type: 'telegram', channelId: id }))
+  // Validate: chat IDs must be numeric (Telegram IDs are integers or "-100..." prefixed)
+  const safeIds = chatIds.filter(id => /^-?\d+$/.test(id))
+  const channels = safeIds.map(id => ({ type: 'telegram', channelId: id }))
   const filters  = { minDiscount: 0, categories: [], keywords: [], excludeKeywords: [] }
 
-  const channelsJson  = JSON.stringify(channels)
-  const filtersJson   = JSON.stringify(filters)
-  const affiliatesJson = JSON.stringify({})
-
-  pgm.sql(`
-    INSERT INTO tenants (id, name, active, channels, filters, affiliates)
-    VALUES (
-      'default',
-      'Default',
-      true,
-      '${channelsJson}'::jsonb,
-      '${filtersJson}'::jsonb,
-      '${affiliatesJson}'::jsonb
-    )
-    ON CONFLICT (id) DO NOTHING
-  `)
+  // Use parameterized query to avoid SQL injection via env var interpolation
+  await pgm.db.query(
+    `INSERT INTO tenants (id, name, active, channels, filters, affiliates)
+     VALUES ('default', 'Default', true, $1::jsonb, $2::jsonb, $3::jsonb)
+     ON CONFLICT (id) DO NOTHING`,
+    [JSON.stringify(channels), JSON.stringify(filters), '{}']
+  )
 
   console.log('[migration 002] default tenant upserted or already exists')
 }
