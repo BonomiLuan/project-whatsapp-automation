@@ -13,7 +13,7 @@ export function registerPelandoMonitor(
 ): void {
   scheduler.schedule(
     'pelando-monitor',
-    '*/30 * * * *',
+    '0 8-22/2 * * *',
     () => lock.withLock('monitor:pelando', () => monitor.execute()).then(() => void 0),
   )
 }

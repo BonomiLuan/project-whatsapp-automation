@@ -713,7 +713,7 @@ export async function fetchDeals(): Promise<PelandoDeal[]> {
     }
   }
 
-  return allDeals.sort((a, b) => b.temperature - a.temperature).slice(0, 20)
+  return allDeals.sort((a, b) => b.temperature - a.temperature).slice(0, 5)
 }
 
 function formatPriceFromProps(item: PelandoRawDeal): string {
