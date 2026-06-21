@@ -12,4 +12,4 @@ RUN mkdir -p data
 
 EXPOSE 3000
 
-CMD ["node", "dist/server/index.js"]
+CMD ["node", "dist/index.js"]
