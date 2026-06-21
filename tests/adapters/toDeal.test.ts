@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { toDealPelando } from '../../src/adapters/scrapers/PelandoScraper.js'
+import { toDealPelando, isRelevantForNiche } from '../../src/adapters/scrapers/PelandoScraper.js'
 import { toDealML } from '../../src/adapters/scrapers/MercadoLivreScraper.js'
 import type { PelandoDeal } from '../../src/adapters/scrapers/PelandoScraper.js'
 import type { MLCategoryDeal } from '../../src/adapters/scrapers/MercadoLivreScraper.js'
@@ -132,5 +132,39 @@ describe('toDealML', () => {
     const deal = toDealML({ ...baseML, price: 'consulte' })
     expect(deal.price).toBe(0)
     expect(Number.isNaN(deal.price)).toBe(false)
+  })
+})
+
+describe('isRelevantForNiche', () => {
+  it('accepts a deal with a matching keyword', () => {
+    expect(isRelevantForNiche('Kit 4 Panelas Antiaderentes')).toBe(true)
+  })
+
+  it('accepts deal with accented variant (bebê)', () => {
+    expect(isRelevantForNiche('Fralda Bebê Pampers Tamanho P 100un')).toBe(true)
+  })
+
+  it('accepts deal with unaccented variant (bebe)', () => {
+    expect(isRelevantForNiche('Carrinho de bebe travel system')).toBe(true)
+  })
+
+  it('rejects ar condicionado', () => {
+    expect(isRelevantForNiche('Ar Condicionado Split 12000 BTU Inverter')).toBe(false)
+  })
+
+  it('rejects régua de tomada', () => {
+    expect(isRelevantForNiche('Régua de Tomada 6 Saídas com USB')).toBe(false)
+  })
+
+  it('rejects scanner automotivo', () => {
+    expect(isRelevantForNiche('Scanner Automotivo OBD2 Bluetooth')).toBe(false)
+  })
+
+  it('rejects HD externo', () => {
+    expect(isRelevantForNiche('HD Externo Seagate 1TB USB 3.0')).toBe(false)
+  })
+
+  it('is case-insensitive', () => {
+    expect(isRelevantForNiche('SHAMPOO SEDA 400ml')).toBe(true)
   })
 })
