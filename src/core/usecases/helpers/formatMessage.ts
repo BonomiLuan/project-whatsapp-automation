@@ -4,7 +4,7 @@ export function formatMessage(args: {
   originalPrice?: string
   price?: string
   coupon?: string
-  buyUrl: string
+  buyUrl?: string
   groupUrl: string
 }): string {
   const { emoji, title, originalPrice, price, coupon, buyUrl, groupUrl } = args
@@ -17,9 +17,9 @@ export function formatMessage(args: {
     originalPrice ? `💸 De: ~${originalPrice}~` : null,
     price ? `🔥 Por: *${price}*` : null,
     ``,
-    `🛒 Compre aqui ⬇️`,
-    buyUrl,
-    ``,
+    buyUrl ? `🛒 Compre aqui ⬇️` : null,
+    buyUrl ? buyUrl : null,
+    buyUrl ? `` : null,
     `💬 Link do grupo ⬇️`,
     groupUrl ? groupUrl : null,
     groupUrl ? `` : null,

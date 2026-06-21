@@ -523,6 +523,36 @@ const CATEGORIES = [
 
 const MIN_TEMPERATURE = 20
 
+export const TOPIC_KEYWORDS: string[] = [
+  // Bebê / maternidade
+  'fralda', 'bebê', 'bebe', 'infantil', 'maternidade',
+  'berço', 'berco', 'carrinho', 'mamadeira', 'chupeta', 'enxoval',
+  'lenço umedecido', 'lenco umedecido', 'pomada assadura',
+  // Cozinha
+  'panela', 'frigideira', 'airfryer', 'air fryer', 'cafeteira',
+  'batedeira', 'chaleira', 'liquidificador', 'escorredor',
+  'faca', 'tábua', 'tabua', 'tigela', 'pote',
+  // Limpeza
+  'sabão', 'sabao', 'detergente', 'desinfetante', 'amaciante',
+  'esponja', 'mop', 'limpador', 'multiuso', 'vassoura', 'rodo',
+  // Beleza / higiene
+  'shampoo', 'condicionador', 'creme', 'hidratante', 'sabonete',
+  'maquiagem', 'perfume', 'esmalte', 'absorvente', 'protetor solar',
+  'desodorante',
+  // Casa / organização
+  'tapete', 'cortina', 'toalha', 'cesto', 'organizador', 'almofada',
+  'jogo de cama', 'edredom', 'prateleira', 'cabide', 'quadro decorativo',
+  // Pet
+  'ração', 'racao', 'coleira', 'arranhador',
+  // Brinquedos
+  'brinquedo', 'pelúcia', 'pelucia', 'boneca', 'quebra-cabeça',
+]
+
+export function isRelevantForNiche(title: string): boolean {
+  const lower = title.toLowerCase()
+  return TOPIC_KEYWORDS.some(kw => lower.includes(kw))
+}
+
 const ALLOWED_STORES: string[] = ['amazon', 'mercado livre', 'mercadolivre', 'ml', 'shopee']
 
 export async function fetchDeals(): Promise<PelandoDeal[]> {
@@ -584,6 +614,12 @@ export async function fetchDeals(): Promise<PelandoDeal[]> {
         }
 
         seen.add(dealPageUrl)
+
+        // Niche relevance gate — keeps only products for the housewife niche
+        if (!isRelevantForNiche(item.title)) {
+          console.log(`[pelando:filter] fora do nicho, ignorado: ${item.title.slice(0, 60)}`)
+          continue
+        }
 
         // Regular deal: apply store filter
         if (ALLOWED_STORES.length > 0) {
