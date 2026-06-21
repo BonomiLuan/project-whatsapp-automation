@@ -1,6 +1,9 @@
 import axios from 'axios'
 
-const ASSOCIATE_TAG = process.env.AMAZON_ASSOCIATE_TAG ?? 'thaisbonomi-20'
+const ASSOCIATE_TAG = process.env.AMAZON_ASSOCIATE_TAG
+if (!ASSOCIATE_TAG) {
+  console.warn('[amazon] AMAZON_ASSOCIATE_TAG not set — affiliate tags will be omitted')
+}
 
 function extractAsin(url: string): string | null {
   const match = url.match(/\/(?:dp|gp\/product|exec\/obidos\/ASIN)\/([A-Z0-9]{10})/i)
@@ -21,6 +24,7 @@ async function expandShortLink(url: string): Promise<string> {
 }
 
 export async function injectAmazonTag(url: string): Promise<string> {
+  if (!ASSOCIATE_TAG) return url
   try {
     let resolved = url
     if (url.includes('a.co') || url.includes('amzn.to')) {

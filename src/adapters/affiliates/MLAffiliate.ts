@@ -4,22 +4,22 @@ import StealthPlugin from 'puppeteer-extra-plugin-stealth'
 
 chromium.use(StealthPlugin())
 
-const PUBLISHER_ID = process.env.ML_PUBLISHER_ID ?? '64897511'
-const MATT_WORD = process.env.ML_MATT_WORD ?? 'mamaeeconomica'
+const PUBLISHER_ID = process.env.ML_PUBLISHER_ID
+const MATT_WORD = process.env.ML_MATT_WORD
+if (!PUBLISHER_ID || !MATT_WORD) {
+  console.warn('[ml] ML_PUBLISHER_ID or ML_MATT_WORD not set — affiliate tags will be omitted')
+}
 
 const ML_API = 'https://api.mercadolibre.com'
 
 // OAuth app token — necessário apenas para endpoints privados (ex: /items/{id}/prices)
 let cachedToken: { token: string; expiresAt: number } | null = null
+let tokenPromise: Promise<string | null> | null = null
 
-async function getAppToken(): Promise<string | null> {
+async function fetchToken(): Promise<string | null> {
   const clientId = process.env.ML_CLIENT_ID
   const clientSecret = process.env.ML_CLIENT_SECRET
   if (!clientId || !clientSecret) return null
-
-  if (cachedToken && Date.now() < cachedToken.expiresAt - 300_000) {
-    return cachedToken.token
-  }
 
   const params = new URLSearchParams({
     grant_type: 'client_credentials',
@@ -38,6 +38,23 @@ async function getAppToken(): Promise<string | null> {
   }
   console.log('[ml] token OAuth renovado')
   return cachedToken.token
+}
+
+async function getAppToken(): Promise<string | null> {
+  const clientId = process.env.ML_CLIENT_ID
+  const clientSecret = process.env.ML_CLIENT_SECRET
+  if (!clientId || !clientSecret) return null
+
+  if (cachedToken && Date.now() < cachedToken.expiresAt - 300_000) {
+    return cachedToken.token
+  }
+
+  // In-flight promise lock: prevents thundering herd when token is expired
+  // and multiple concurrent callers arrive simultaneously.
+  if (!tokenPromise) {
+    tokenPromise = fetchToken().finally(() => { tokenPromise = null })
+  }
+  return tokenPromise
 }
 
 // Endpoints públicos NÃO precisam de Authorization — injetar Bearer causa 403 PolicyAgent
@@ -112,6 +129,7 @@ export async function resolveMLShortLink(url: string): Promise<string> {
 }
 
 export async function injectMLTag(url: string): Promise<string> {
+  if (!PUBLISHER_ID || !MATT_WORD) return url
   try {
     let resolved = url
     if (url.includes('meli.la') || url.includes('ml.bz')) {
@@ -407,7 +425,9 @@ export interface MLDeal {
 }
 
 export function buildMLSearchUrl(title: string): string {
-  return 'https://www.mercadolivre.com.br/jm/search?as_word=' + encodeURIComponent(title) + '&matt_tool=' + PUBLISHER_ID + '&matt_word=' + MATT_WORD
+  const base = 'https://www.mercadolivre.com.br/jm/search?as_word=' + encodeURIComponent(title)
+  if (!PUBLISHER_ID || !MATT_WORD) return base
+  return base + '&matt_tool=' + PUBLISHER_ID + '&matt_word=' + MATT_WORD
 }
 
 import type { AffiliateLinkBuilder } from '../../core/ports/AffiliateLinkBuilder.js'
