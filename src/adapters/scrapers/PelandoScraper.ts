@@ -528,10 +528,17 @@ export const TOPIC_KEYWORDS: string[] = [
   'fralda', 'bebê', 'bebe', 'infantil', 'maternidade',
   'berço', 'berco', 'carrinho', 'mamadeira', 'chupeta', 'enxoval',
   'lenço umedecido', 'lenco umedecido', 'pomada assadura',
-  // Cozinha
+  // Cozinha — eletrodomésticos
   'panela', 'frigideira', 'airfryer', 'air fryer', 'cafeteira',
   'batedeira', 'chaleira', 'liquidificador', 'escorredor',
+  'sorveteira', 'panificadora', 'sanduicheira', 'torradeira',
+  'espremedor', 'processador', 'fritadeira', 'grill', 'waffle',
+  'micro-ondas', 'forno elétrico', 'forno eletrico',
+  // Cozinha — utensílios e recipientes
   'faca', 'tábua', 'tabua', 'tigela', 'pote',
+  'caneca', 'garrafa', 'copo', 'xícara', 'xicara', 'jarra',
+  'galão', 'galao', 'dispenser', 'porta-filtro', 'coador',
+  'talheres', 'forma', 'assadeira', 'refratário', 'refratario',
   // Limpeza
   'sabão', 'sabao', 'detergente', 'desinfetante', 'amaciante',
   'esponja', 'mop', 'limpador', 'multiuso', 'vassoura', 'rodo',
