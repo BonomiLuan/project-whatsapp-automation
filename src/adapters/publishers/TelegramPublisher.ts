@@ -616,13 +616,16 @@ export function createBot() {
       await ctx.reply('🎟️ Nenhum cupom Pelando detectado ainda. Eles aparecem automaticamente quando o monitor rodar.')
       return
     }
-    await ctx.reply(`🎟️ <b>Últimos ${coupons.length} cupom(ns) do Pelando:</b>`, { parse_mode: 'HTML' })
-    for (const coupon of coupons.slice(0, 10)) {
-      try {
-        await sendPelandoCouponToChat(coupon)
-        await new Promise(r => setTimeout(r, 500))
-      } catch { /* ignora falha individual */ }
+    const lines = [`🎟️ <b>Últimos ${coupons.length} cupom(ns) detectados:</b>`, '']
+    for (const c of coupons.slice(0, 15)) {
+      lines.push(`<b>${esc(c.store.toUpperCase())}</b>`)
+      lines.push(`📋 <code>${esc(c.couponCode)}</code>`)
+      if (c.price && c.price !== 'Grátis') lines.push(`💰 ${esc(c.price)}`)
+      lines.push(`📦 ${esc(c.title.slice(0, 60))}`)
+      lines.push(`🔗 ${c.dealUrl}`)
+      lines.push('')
     }
+    await ctx.reply(lines.join('\n'), { parse_mode: 'HTML', link_preview_options: { is_disabled: true } })
   })
 
   bot.command('pelando', async (ctx) => {
@@ -1124,19 +1127,39 @@ export class TelegramPublisher implements DealPublisher {
       ? `R$${deal.originalPrice.toFixed(2).replace('.', ',')}`
       : undefined
 
-    // Generate short link for tracking (ofertas.thaisbonomi.com.br/r/CODE)
-    let buyUrl = deal.url
-    try {
-      const sourceMap: Record<string, 'shopee' | 'amazon' | 'ml'> = { mercadolivre: 'ml', shopee: 'shopee', amazon: 'amazon' }
-      const imageForLink = (deal.imageUrl ?? '').includes('pelando.com.br') ? '' : (deal.imageUrl ?? '')
-      const link = await createLink({
-        title: deal.title,
-        image_url: imageForLink,
-        affiliate_url: deal.url,
-        source: sourceMap[deal.marketplace] ?? 'amazon',
-      })
-      buyUrl = (process.env.BASE_URL || '') + '/r/' + link.code
-    } catch { /* fallback to deal.url */ }
+    // For coupon deals: short link → store homepage with affiliate tags (not the Pelando URL)
+    let buyUrl: string | undefined
+    if (deal.couponCode) {
+      const storeLink = getCouponStoreUrl(deal.marketplace)
+      if (storeLink) {
+        try {
+          const sourceMap: Record<string, 'shopee' | 'amazon' | 'ml'> = { mercadolivre: 'ml', shopee: 'shopee', amazon: 'amazon' }
+          const link = await createLink({
+            title: deal.title,
+            image_url: '',
+            affiliate_url: storeLink.url,
+            source: sourceMap[deal.marketplace] ?? 'amazon',
+          })
+          buyUrl = (process.env.BASE_URL || '') + '/r/' + link.code
+        } catch {
+          buyUrl = storeLink.url
+        }
+      }
+    } else {
+      // Generate short link for tracking (ofertas.thaisbonomi.com.br/r/CODE)
+      buyUrl = deal.url
+      try {
+        const sourceMap: Record<string, 'shopee' | 'amazon' | 'ml'> = { mercadolivre: 'ml', shopee: 'shopee', amazon: 'amazon' }
+        const imageForLink = (deal.imageUrl ?? '').includes('pelando.com.br') ? '' : (deal.imageUrl ?? '')
+        const link = await createLink({
+          title: deal.title,
+          image_url: imageForLink,
+          affiliate_url: deal.url,
+          source: sourceMap[deal.marketplace] ?? 'amazon',
+        })
+        buyUrl = (process.env.BASE_URL || '') + '/r/' + link.code
+      } catch { /* fallback to deal.url */ }
+    }
 
     const text = formatMessage({
       emoji,
