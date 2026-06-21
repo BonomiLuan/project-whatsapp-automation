@@ -607,9 +607,10 @@ app.patch('/api/config', async (req, res) => {
 })
 
 // GET /api/image-proxy
-app.get('/api/image-proxy', async (req, res) => {
+app.get('/api/image-proxy', redirectLimiter, async (req, res) => {
   const url = req.query.url as string
   if (!url) return res.status(400).send('URL required')
+  if (!isSsrfAllowed(url)) return res.status(403).send('Domain not allowed')
   try {
     const response = await axios.get(url, {
       responseType: 'arraybuffer',
