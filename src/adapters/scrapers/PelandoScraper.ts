@@ -522,30 +522,53 @@ const CATEGORIES = [
 ]
 
 const MIN_TEMPERATURE = 20
-
 export const TOPIC_KEYWORDS: string[] = [
-  // Bebê / maternidade
+  // Bebê / maternidade (Adicionados termos de rotina)
   'fralda', 'bebê', 'bebe', 'infantil', 'maternidade',
   'berço', 'berco', 'carrinho', 'mamadeira', 'chupeta', 'enxoval',
   'lenço umedecido', 'lenco umedecido', 'pomada assadura',
-  // Cozinha
+  'body bebê', 'macacão', 'bolsa maternidade', 'babá eletrônica',
+  'cadeira alimentação', 'tapete atividades', 'andador',
+
+  // Cozinha — eletrodomésticos
   'panela', 'frigideira', 'airfryer', 'air fryer', 'cafeteira',
   'batedeira', 'chaleira', 'liquidificador', 'escorredor',
+  'sorveteira', 'panificadora', 'sanduicheira', 'torradeira',
+  'espremedor', 'processador', 'fritadeira', 'grill', 'waffle',
+  'micro-ondas', 'forno elétrico', 'forno eletrico',
+  'panela pressão', 'mixer',
+
+  // Cozinha — utensílios e recipientes
   'faca', 'tábua', 'tabua', 'tigela', 'pote',
-  // Limpeza
+  'caneca', 'garrafa', 'copo', 'xícara', 'xicara', 'jarra',
+  'galão', 'galao', 'dispenser', 'porta-filtro', 'coador',
+  'talheres', 'forma', 'assadeira', 'refratário', 'refratario',
+  'pote hermético', 'tupperware', 'kit cozinha',
+
+  // Limpeza (Foco em economia - o que elas estocam)
   'sabão', 'sabao', 'detergente', 'desinfetante', 'amaciante',
   'esponja', 'mop', 'limpador', 'multiuso', 'vassoura', 'rodo',
-  // Beleza / higiene
+  'sabão líquido', 'lava roupas', 'pano microfibra', 
+  'limpa vidros', 'álcool 70', 'suporte vassoura',
+
+  // Beleza / higiene (Itens de uso diário)
   'shampoo', 'condicionador', 'creme', 'hidratante', 'sabonete',
   'maquiagem', 'perfume', 'esmalte', 'absorvente', 'protetor solar',
-  'desodorante',
+  'desodorante', 'máscara capilar', 'kit skincare', 'escova secadora',
+
   // Casa / organização
   'tapete', 'cortina', 'toalha', 'cesto', 'organizador', 'almofada',
   'jogo de cama', 'edredom', 'prateleira', 'cabide', 'quadro decorativo',
+  'capa sofá', 'lençol', 'travesseiro', 'caixa organizadora',
+
   // Pet
-  'ração', 'racao', 'coleira', 'arranhador',
-  // Brinquedos
+  'ração', 'racao', 'coleira', 'arranhador', 'tapete higiênico',
+  'petisco', 'cama pet',
+
+  // Brinquedos / Escolar (Subnicho fortíssimo para mães)
   'brinquedo', 'pelúcia', 'pelucia', 'boneca', 'quebra-cabeça',
+  'lego', 'jogo educativo', 'mochila escolar', 'lancheira',
+  'caderno', 'canetinha', 'giz de cera', 'livro infantil',
 ]
 
 export function isRelevantForNiche(title: string): boolean {
