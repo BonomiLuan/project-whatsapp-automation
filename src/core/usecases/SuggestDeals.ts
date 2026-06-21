@@ -1,6 +1,7 @@
 import type { RotationStore, RotationCursor } from '../ports/RotationStore.js'
 import type { DealRepository } from '../ports/DealRepository.js'
 import type { DealPublisher } from '../ports/DealPublisher.js'
+import type { AffiliateLinkBuilder } from '../ports/AffiliateLinkBuilder.js'
 import type { Deal } from '../domain/Deal.js'
 import type { Tenant } from '../domain/Tenant.js'
 import { nextCategory, preferDifferentSource } from './CategoryRotation.js'
@@ -22,6 +23,7 @@ export class SuggestDeals {
     private readonly rotationStore: RotationStore,
     private readonly dealRepo: DealRepository,
     private readonly publisher: DealPublisher,
+    private readonly affiliateBuilder?: AffiliateLinkBuilder,
   ) {}
 
   async execute(tenant: Tenant, pool: Deal[]): Promise<void> {
@@ -63,6 +65,12 @@ export class SuggestDeals {
     }
 
     if (!deal) return
+
+    // 4.5 Affiliate link injection — occurs BEFORE publish
+    //     Only when builder is provided and supports the deal's marketplace
+    if (this.affiliateBuilder && this.affiliateBuilder.supports(deal.marketplace)) {
+      deal = await this.affiliateBuilder.build(deal, tenant.affiliates)
+    }
 
     // 5. Publish → markAsSent → save cursor (all three only on success)
     //    If publish throws, neither markAsSent nor save is called
