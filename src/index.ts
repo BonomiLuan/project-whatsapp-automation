@@ -77,4 +77,5 @@ registerMLMonitor(scheduler, lock, mlMonitor)
 registerSuggestionJobs(scheduler, suggest, rotationStore, tenantRepo)
 
 // ── Start web server (Express + WhatsApp bot + Telegram bot) ──────────────────
-import './web/server.js'
+// Note: server.ts is already imported via `setTenantRepo` on line 28 above.
+// A redundant bare import here was removed to avoid double-module-execution risk.
