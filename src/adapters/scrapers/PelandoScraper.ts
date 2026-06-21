@@ -498,6 +498,7 @@ export interface PelandoDeal {
   id: string
   title: string
   price: string
+  originalPrice?: string
   store: string
   dealUrl: string
   imageUrl: string
@@ -595,6 +596,7 @@ export async function fetchDeals(): Promise<PelandoDeal[]> {
         const isMLDeal = storeLower.includes('mercado') || storeLower.includes('mercadolivre') || storeLower === 'ml'
         let dealUrl = dealPageUrl
         let imageUrl = ''
+        let shopeeOriginalPrice: string | undefined
 
         // sourceUrl comes directly from the category page Astro props — no detail page fetch needed
         const sourceUrl = item.sourceUrl ?? null
@@ -629,6 +631,7 @@ export async function fetchDeals(): Promise<PelandoDeal[]> {
           console.log(`[pelando:shopee] ✓ ${shopeeUrl.slice(0, 80)}`)
           const shopeeInfo = await fetchShopeeProductByUrl(shopeeUrl).catch(() => null)
           if (shopeeInfo?.imageUrl) imageUrl = shopeeInfo.imageUrl
+          shopeeOriginalPrice = shopeeInfo?.originalPrice
           const subIds: SubIds = { source: 'telegram', trigger: 'auto', category: 'geral', slot: 'none' }
           try { dealUrl = await generateAffiliateLink(shopeeUrl, subIds) } catch { dealUrl = shopeeUrl }
         }
@@ -637,6 +640,7 @@ export async function fetchDeals(): Promise<PelandoDeal[]> {
           id: dealPageUrl,
           title: item.title.slice(0, 80),
           price: formatPriceFromProps(item),
+          originalPrice: shopeeOriginalPrice,
           store: storeName,
           dealUrl,
           imageUrl,
@@ -695,10 +699,17 @@ function parseBRPrice(priceStr: string): number {
 export function toDealPelando(raw: PelandoDeal): Deal {
   const price = parseBRPrice(raw.price)
 
+  let originalPrice: number | undefined
+  if (raw.originalPrice) {
+    const parsed = parseBRPrice(raw.originalPrice)
+    if (!isNaN(parsed) && parsed > price) originalPrice = parsed
+  }
+
   return {
     id: raw.id,
     title: raw.title,
     price,
+    originalPrice,
     url: raw.dealUrl,
     imageUrl: raw.imageUrl || undefined,
     couponCode: raw.couponCode || undefined,

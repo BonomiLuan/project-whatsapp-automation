@@ -24,10 +24,12 @@ export function registerSuggestionJobs(
     '*/15 7-22 * * *',
     async () => {
       const tenants = await tenantRepo.findAll()
+      const parsePrice = (s: string) => parseFloat(s.replace(/[^\d,.]/g, '').replace(',', '.')) || 0
       const pool = getCachedDeals().map(d => ({
         id: d.id,
         title: d.title,
-        price: parseFloat(d.price.replace(/[^\d,.]/g, '').replace(',', '.')) || 0,
+        price: parsePrice(d.price),
+        originalPrice: d.originalPrice ? (parsePrice(d.originalPrice) || undefined) : undefined,
         url: d.affiliateUrl,
         imageUrl: d.imageUrl || undefined,
         marketplace: (d.source === 'mercado-livre' ? 'mercadolivre' : d.source) as import('../core/domain/Deal.js').Marketplace,

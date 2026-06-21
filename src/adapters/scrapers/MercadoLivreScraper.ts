@@ -135,9 +135,14 @@ export async function fetchMLCategoryDeals(limit = 60): Promise<MLCategoryDeal[]
               card.querySelector('h2')
             )?.textContent?.trim() ?? ''
 
-            // Preço atual (fraction + cents)
-            const priceFrac = card.querySelector('[class*="price-tag-fraction"], [class*="andes-money-amount__fraction"]')?.textContent?.replace(/\D/g, '') ?? ''
-            const priceCents = card.querySelector('[class*="price-tag-cents"], [class*="andes-money-amount__cents"]')?.textContent?.replace(/\D/g, '') ?? '00'
+            // Preço atual — busca dentro do container de preço atual para não capturar o preço riscado (original)
+            const priceAnchor = (
+              card.querySelector('[class*="poly-price__current"]') ??
+              card.querySelector('[class*="price-tag-amount"]:not([class*="price-tag-amount--through"])') ??
+              card
+            )
+            const priceFrac = priceAnchor.querySelector('[class*="price-tag-fraction"], [class*="andes-money-amount__fraction"]')?.textContent?.replace(/\D/g, '') ?? ''
+            const priceCents = priceAnchor.querySelector('[class*="price-tag-cents"], [class*="andes-money-amount__cents"]')?.textContent?.replace(/\D/g, '') ?? '00'
             const price = priceFrac ? parseFloat(`${priceFrac}.${priceCents.padEnd(2, '0')}`) : 0
 
             // Preço original (riscado) — poly-card usa andes-money-amount--previous / poly-price__original
