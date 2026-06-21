@@ -25,8 +25,8 @@ describe('formatMessage', () => {
       originalPrice: 'R$200,00',
       price: 'R$99,90',
     })
-    expect(result).toContain('💸 De: R$200,00')
-    expect(result).toContain('🔥 Por: R$99,90')
+    expect(result).toContain('💸 De: ~R$200,00~')
+    expect(result).toContain('🔥 Por: *R$99,90*')
   })
 
   it('renders only Por line when originalPrice is absent', () => {
@@ -34,7 +34,7 @@ describe('formatMessage', () => {
       ...BASE_ARGS,
       price: 'R$49,90',
     })
-    expect(result).toContain('🔥 Por: R$49,90')
+    expect(result).toContain('🔥 Por: *R$49,90*')
     expect(result).not.toContain('💸 De:')
   })
 
