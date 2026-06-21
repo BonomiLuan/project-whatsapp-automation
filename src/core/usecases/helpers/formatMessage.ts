@@ -1,9 +1,3 @@
-/**
- * Pure helper: builds the Telegram caption string for a deal announcement.
- * Byte-identical output to the inline formatMessage in TelegramPublisher.ts lines 32-63.
- *
- * No IO imports. All inputs as parameters. No module-level mutable state.
- */
 export function formatMessage(args: {
   emoji: string
   title: string
@@ -15,24 +9,21 @@ export function formatMessage(args: {
 }): string {
   const { emoji, title, originalPrice, price, coupon, buyUrl, groupUrl } = args
 
-  const priceLine = originalPrice && price
-    ? `~${originalPrice}~ por *${price}*`
-    : price ? `*${price}*` : ''
-
-  return [
-    `${emoji} *${title}*`,
+  const lines: (string | null)[] = [
+    `${emoji} ${title}`,
     ``,
-    priceLine,
-    coupon ? `🎟️ Cupom: *${coupon}*` : '',
+    coupon ? `🎟️ Use cupom ${coupon}` : null,
+    coupon ? `` : null,
+    originalPrice ? `💸 De: ${originalPrice}` : null,
+    price ? `🔥 Por: ${price}` : null,
     ``,
-    `🔗 Link para comprar:`,
+    `🛒 Compre aqui ⬇️`,
     buyUrl,
     ``,
-    groupUrl ? `💬 Link para o grupo:` : '',
-    groupUrl || '',
-    ``,
-    `⏰ Aproveite enquanto durar!`,
-    ``,
+    groupUrl ? groupUrl : null,
+    groupUrl ? `` : null,
     `#Anúncio`,
-  ].filter(v => v !== undefined && !(v === '' && !groupUrl)).join('\n').trim()
+  ]
+
+  return lines.filter((l): l is string => l !== null).join('\n').trim()
 }
