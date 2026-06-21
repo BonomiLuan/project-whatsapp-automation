@@ -1,9 +1,10 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { SuggestDeals } from '../../src/core/usecases/SuggestDeals.js'
 import type { DealRepository } from '../../src/core/ports/DealRepository.js'
 import type { DealPublisher } from '../../src/core/ports/DealPublisher.js'
 import type { RotationStore } from '../../src/core/ports/RotationStore.js'
 import type { RotationCursor } from '../../src/core/ports/RotationStore.js'
+import type { AffiliateLinkBuilder } from '../../src/core/ports/AffiliateLinkBuilder.js'
 import type { Deal } from '../../src/core/domain/Deal.js'
 import type { Tenant } from '../../src/core/domain/Tenant.js'
 
@@ -208,5 +209,52 @@ describe('SuggestDeals', () => {
     // Fallback should still publish the one available deal
     expect(publisher.published).toHaveLength(1)
     expect(publisher.published[0].deal.id).toBe('deal-1')
+  })
+
+  it('calls affiliateBuilder.build() when supports() returns true', async () => {
+    const originalDeal = makeDeal({ id: 'deal-1', url: 'https://original.com', marketplace: 'amazon' })
+    const affiliatedDeal = { ...originalDeal, url: 'AFFILIATE_URL' }
+    const tenant = makeTenant()
+
+    const realAffiliate: AffiliateLinkBuilder = {
+      supports: vi.fn(() => true),
+      build: vi.fn(async () => affiliatedDeal),
+    }
+
+    const rotationStore = makeFakeRotationStore()
+    const dealRepo = makeFakeDealRepo()
+    const publisher = makeFakePublisher()
+
+    const useCase = new SuggestDeals(rotationStore, dealRepo, publisher, realAffiliate)
+    await useCase.execute(tenant, [originalDeal])
+
+    expect(realAffiliate.supports).toHaveBeenCalledWith('amazon')
+    expect(realAffiliate.build).toHaveBeenCalledOnce()
+    // Publisher must receive the affiliated deal (with AFFILIATE_URL)
+    expect(publisher.published).toHaveLength(1)
+    expect(publisher.published[0].deal.url).toBe('AFFILIATE_URL')
+  })
+
+  it('does NOT modify deal when affiliateBuilder.supports() returns false', async () => {
+    const originalDeal = makeDeal({ id: 'deal-1', url: 'https://original.com', marketplace: 'amazon' })
+    const tenant = makeTenant()
+
+    const noopAffiliate: AffiliateLinkBuilder = {
+      supports: vi.fn(() => false),
+      build: vi.fn(async (deal) => deal),
+    }
+
+    const rotationStore = makeFakeRotationStore()
+    const dealRepo = makeFakeDealRepo()
+    const publisher = makeFakePublisher()
+
+    const useCase = new SuggestDeals(rotationStore, dealRepo, publisher, noopAffiliate)
+    await useCase.execute(tenant, [originalDeal])
+
+    expect(noopAffiliate.supports).toHaveBeenCalledWith('amazon')
+    expect(noopAffiliate.build).not.toHaveBeenCalled()
+    // Publisher must receive the original deal unchanged
+    expect(publisher.published).toHaveLength(1)
+    expect(publisher.published[0].deal.url).toBe('https://original.com')
   })
 })
