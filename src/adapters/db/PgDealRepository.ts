@@ -27,10 +27,17 @@ export class PgDealRepository implements DealRepository {
 
   async markAsSent(dealId: string, tenantId: string): Promise<void> {
     try {
+      // Use UPDATE+INSERT pattern to avoid relying on a named unique constraint,
+      // which may not exist in older production schemas where migration 003 hasn't run.
       await pool.query(
-        `INSERT INTO deal_history (deal_id, tenant_id, sent_at)
-         VALUES ($1, $2, NOW())
-         ON CONFLICT (deal_id, tenant_id) DO UPDATE SET sent_at = NOW()`,
+        `WITH upd AS (
+           UPDATE deal_history SET sent_at = NOW()
+           WHERE deal_id = $1 AND tenant_id = $2
+           RETURNING deal_id
+         )
+         INSERT INTO deal_history (deal_id, tenant_id, sent_at)
+         SELECT $1, $2, NOW()
+         WHERE NOT EXISTS (SELECT 1 FROM upd)`,
         [dealId, tenantId]
       )
     } catch (err) {
