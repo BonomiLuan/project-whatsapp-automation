@@ -198,6 +198,11 @@ export interface UnifiedDeal {
 let dealsCache: UnifiedDeal[] = []
 let sentTodayLog: (UnifiedDeal & { sentAt: string })[] = []
 
+// In-memory cache of recently sent Pelando coupons (last 30)
+import type { PelandoDeal } from '../adapters/scrapers/PelandoScraper.js'
+const recentCoupons: PelandoDeal[] = []
+export function getCachedCoupons(): PelandoDeal[] { return [...recentCoupons] }
+
 // Tracks Pelando deal IDs already processed — prevents sending the same coupon twice
 const seenPelandoIds = new Set<string>()
 
@@ -299,6 +304,8 @@ async function _monitorPelando(): Promise<void> {
       for (const coupon of newCoupons) {
         try {
           await sendPelandoCouponToChat(coupon)
+          recentCoupons.unshift(coupon)
+          if (recentCoupons.length > 30) recentCoupons.pop()
           console.log(`[pelando:monitor] ✓ Cupom enviado: ${coupon.couponCode} — ${coupon.store}`)
         } catch (err) {
           console.error(`[pelando:monitor] Erro ao enviar cupom:`, err instanceof Error ? err.message : err)

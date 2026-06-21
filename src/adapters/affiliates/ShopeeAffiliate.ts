@@ -206,6 +206,7 @@ export async function expandShortLink(url: string): Promise<string> {
 export interface ShopeeProductInfo {
   price: string
   priceMin: string
+  originalPrice?: string
   name: string
   imageUrl: string
 }
@@ -220,18 +221,22 @@ export async function fetchShopeeProductByUrl(url: string): Promise<ShopeeProduc
   if (!itemId) return null
 
   try {
-    const data = await gql<{ productOfferV2: { nodes: Pick<ShopeeProduct, 'itemId' | 'productName' | 'price' | 'priceMin' | 'imageUrl'>[] } }>(`
+    const data = await gql<{ productOfferV2: { nodes: Pick<ShopeeProduct, 'itemId' | 'productName' | 'price' | 'priceMin' | 'priceDiscountRate' | 'imageUrl'>[] } }>(`
       query {
         productOfferV2(itemId: ${itemId}, limit: 1) {
           nodes {
-            itemId productName price priceMin imageUrl
+            itemId productName price priceMin priceDiscountRate imageUrl
           }
         }
       }
     `)
     const p = data?.productOfferV2?.nodes?.[0]
     if (!p) return null
-    return { price: p.price, priceMin: p.priceMin, name: p.productName, imageUrl: p.imageUrl }
+    const priceNum = parseFloat(p.price)
+    const originalPrice = p.priceDiscountRate > 0
+      ? (priceNum / (1 - p.priceDiscountRate / 100)).toFixed(2)
+      : undefined
+    return { price: p.price, priceMin: p.priceMin, originalPrice, name: p.productName, imageUrl: p.imageUrl }
   } catch {
     return null
   }

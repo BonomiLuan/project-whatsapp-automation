@@ -249,6 +249,7 @@ const offerWizard = new Scenes.WizardScene<Ctx>(
         product = {
           name: rawName.length > 60 ? rawName.slice(0, 57) + '...' : rawName,
           price: fmt(shopeeApiInfo.price),
+          originalPrice: shopeeApiInfo.originalPrice ? fmt(shopeeApiInfo.originalPrice) : undefined,
           imageUrl: shopeeApiInfo.imageUrl,
           originalUrl: affiliateUrl,
         }
@@ -550,6 +551,7 @@ export function createBot() {
     '/amazon — 📦 Ofertas Amazon do momento',
     '/meli — 🛒 Ofertas Mercado Livre do momento',
     '/cupom — 🎟️ Montar e enviar um cupom Shopee',
+    '/cupons — 🎟️ Ver últimos cupons detectados pelo Pelando',
     '/atualizar — buscar novas ofertas agora',
     '/pelando — disparar monitor Pelando agora',
     '/feedback — ver resumo de curtidas e irrelevantes',
@@ -604,6 +606,22 @@ export function createBot() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Erro desconhecido'
       await ctx.telegram.editMessageText(ctx.chat!.id, status.message_id, undefined, `❌ ${msg}`)
+    }
+  })
+
+  bot.command('cupons', async (ctx) => {
+    const { getCachedCoupons } = await import('../../web/server.js')
+    const coupons = getCachedCoupons()
+    if (coupons.length === 0) {
+      await ctx.reply('🎟️ Nenhum cupom Pelando detectado ainda. Eles aparecem automaticamente quando o monitor rodar.')
+      return
+    }
+    await ctx.reply(`🎟️ <b>Últimos ${coupons.length} cupom(ns) do Pelando:</b>`, { parse_mode: 'HTML' })
+    for (const coupon of coupons.slice(0, 10)) {
+      try {
+        await sendPelandoCouponToChat(coupon)
+        await new Promise(r => setTimeout(r, 500))
+      } catch { /* ignora falha individual */ }
     }
   })
 
@@ -844,6 +862,7 @@ export function createBot() {
     { command: 'amazon', description: '📦 Ofertas Amazon do momento' },
     { command: 'meli', description: '🛒 Ofertas Mercado Livre do momento' },
     { command: 'cupom', description: '🎟️ Montar e enviar um cupom Shopee' },
+    { command: 'cupons', description: '🎟️ Ver últimos cupons detectados pelo Pelando' },
     { command: 'atualizar', description: 'Buscar novas ofertas agora' },
     { command: 'pelando', description: '🔍 Disparar monitor Pelando agora' },
     { command: 'limpar', description: '🧹 Limpar links expirados do banco' },

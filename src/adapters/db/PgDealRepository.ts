@@ -30,7 +30,7 @@ export class PgDealRepository implements DealRepository {
       await pool.query(
         `INSERT INTO deal_history (deal_id, tenant_id, sent_at)
          VALUES ($1, $2, NOW())
-         ON CONFLICT DO NOTHING`,
+         ON CONFLICT (deal_id, tenant_id) DO UPDATE SET sent_at = NOW()`,
         [dealId, tenantId]
       )
     } catch (err) {
