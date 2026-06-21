@@ -113,7 +113,7 @@ Plans:
 
 **Wave 2** *(blocked on 04-01)*
 
-- [ ] 04-03-PLAN.md — PgRotationStore com testes + SuggestDeals recebe AffiliateLinkBuilder como 4° parâmetro opcional
+- [x] 04-03-PLAN.md — PgRotationStore com testes + SuggestDeals recebe AffiliateLinkBuilder como 4° parâmetro opcional
 
 **Wave 3** *(blocked on 04-01, 04-02, 04-03)*
 
@@ -132,7 +132,7 @@ Plans:
 | 1. Link Curto WhatsApp | v1.0 | 5/5 | Complete | 2026-06-16 |
 | 2. Hexagonal Structure | v2.0 | 6/6 | Complete | 2026-06-20 |
 | 3. Core Domain Extraction | v2.0 | 5/5 | Complete | 2026-06-20 |
-| 4. Multi-Tenancy | v2.0 | 2/4 | In Progress|  |
+| 4. Multi-Tenancy | v2.0 | 3/4 | In Progress|  |
 
 ---
 *Roadmap created: 2026-06-17 for milestone v2.0*
