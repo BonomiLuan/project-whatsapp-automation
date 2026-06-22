@@ -28,6 +28,10 @@ logs/
 .claude/settings.local.json
 .claude/worktrees/
 .planning/
+.superpowers/
+
+# Node cache
+node-compile-cache/
 
 # Project-specific
 data/history.json
