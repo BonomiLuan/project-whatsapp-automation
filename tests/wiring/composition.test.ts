@@ -102,7 +102,7 @@ describe('composition root wiring', () => {
 
     expect(scheduler.scheduled).toHaveLength(1)
     expect(scheduler.scheduled[0].name).toBe('ml-monitor')
-    expect(scheduler.scheduled[0].cron).toBe('*/30 * * * *')
+    expect(scheduler.scheduled[0].cron).toBe('0 8-22/2 * * *')
   })
 
   it('registerSuggestionJobs schedules suggest-deals and reset-rotation', () => {

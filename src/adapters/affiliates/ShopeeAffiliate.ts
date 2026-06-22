@@ -71,7 +71,7 @@ export const CATEGORY_META: Record<DealCategory, { emoji: string; label: string 
   geral:       { emoji: '🛍️', label: 'Geral' },
 }
 
-const CATEGORY_KEYWORDS: Partial<Record<DealCategory, string[]>> = {
+export const CATEGORY_KEYWORDS: Partial<Record<DealCategory, string[]>> = {
   higiene: [
     'pomada bepantol', 'pomada assadura', 'algodão bebê', 'cotonete bebê',
     'talco bebê', 'óleo corporal bebê', 'kit higiene bebê', 'trocador bebê',
@@ -145,7 +145,7 @@ export async function fetchShopeeDeals(limitPerCategory = 8): Promise<ShopeeProd
   for (const [category, keywords] of Object.entries(CATEGORY_KEYWORDS) as [DealCategory, string[]][]) {
     const categoryProducts: ShopeeProduct[] = []
 
-    for (const keyword of keywords.slice(0, 4)) {
+    for (const keyword of keywords.slice(0, 6)) {
       try {
         const data = await gql<{ productOfferV2: { nodes: Omit<ShopeeProduct, 'category'>[] } }>(`
           query {

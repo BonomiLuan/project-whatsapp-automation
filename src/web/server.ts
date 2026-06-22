@@ -12,7 +12,7 @@ import { buildMessagePayload } from '../adapters/publishers/format.js'
 import { sendOfferMessage } from '../adapters/publishers/WhatsAppPublisher.js'
 import { appendHistory, loadHistory } from '../adapters/db/HistoryRepository.js'
 import { fetchDeals as fetchPelandoDeals } from '../adapters/scrapers/PelandoScraper.js'
-import { fetchShopeeDeals, generateAffiliateLink, CATEGORY_META, type SubIds, type DealCategory } from '../adapters/affiliates/ShopeeAffiliate.js'
+import { fetchShopeeDeals, generateAffiliateLink, CATEGORY_META, CATEGORY_KEYWORDS, type SubIds, type DealCategory } from '../adapters/affiliates/ShopeeAffiliate.js'
 import { fetchMLProductInfo, injectMLTag } from '../adapters/affiliates/MLAffiliate.js'
 import { quickFetchProduct } from '../adapters/scrapers/ProductScraper.js'
 import { createBot, sendProductToChat, sendDealToChat } from '../adapters/publishers/TelegramPublisher.js'
@@ -206,6 +206,14 @@ export function getCachedCoupons(): PelandoDeal[] { return [...recentCoupons] }
 // Tracks Pelando deal IDs already processed — prevents sending the same coupon twice
 const seenPelandoIds = new Set<string>()
 
+function inferCategory(title: string): DealCategory {
+  const lower = title.toLowerCase()
+  for (const [cat, keywords] of Object.entries(CATEGORY_KEYWORDS) as [DealCategory, string[]][]) {
+    if (keywords.some(kw => lower.includes(kw.toLowerCase()))) return cat
+  }
+  return 'geral'
+}
+
 export async function refreshDeals() {
   const now = new Date().toISOString()
   const shopeeResults: UnifiedDeal[] = []
@@ -213,7 +221,7 @@ export async function refreshDeals() {
   // Shopee Affiliate API only — Pelando is handled by monitorPelando()
   if (process.env.SHOPEE_APP_ID && process.env.SHOPEE_SECRET) {
     try {
-      const shopeeProducts = await fetchShopeeDeals(12)
+      const shopeeProducts = await fetchShopeeDeals(20)
       for (const p of shopeeProducts) {
         const priceNum = parseFloat(p.price)
         const originalNum = p.priceDiscountRate > 0
@@ -287,7 +295,7 @@ async function _monitorPelando(): Promise<void> {
         imageUrl: d.imageUrl,
         affiliateUrl: d.dealUrl,
         source,
-        category: 'geral',
+        category: inferCategory(d.title),
         publishedAt: now,
       })
     }

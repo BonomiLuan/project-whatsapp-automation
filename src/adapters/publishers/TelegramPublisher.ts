@@ -15,6 +15,7 @@ import type { DealPublisher } from '../../core/ports/DealPublisher.js'
 import type { Deal, Marketplace } from '../../core/domain/Deal.js'
 import type { Tenant } from '../../core/domain/Tenant.js'
 import { formatMessage } from '../../core/usecases/helpers/formatMessage.js'
+import { shownDealsTracker } from '../store/ShownDealsTracker.js'
 
 import type { Telegram } from 'telegraf'
 let telegramApi: Telegram | null = null
@@ -555,6 +556,8 @@ export function createBot() {
     '/atualizar — buscar novas ofertas agora',
     '/pelando — disparar monitor Pelando agora',
     '/feedback — ver resumo de curtidas e irrelevantes',
+    '/limpar — 🧹 Limpar links expirados do banco',
+    '/resetar — ♻️ Limpar histórico de ofertas vistas (ex: /resetar decoracao)',
     '/ajuda — mostrar esta mensagem',
     '',
     '🔗 Ou mande qualquer link de produto e eu monto a oferta com link de afiliado.',
@@ -591,6 +594,16 @@ export function createBot() {
       const msg = err instanceof Error ? err.message : 'Erro desconhecido'
       await ctx.telegram.editMessageText(ctx.chat!.id, status.message_id, undefined, `❌ ${msg}`)
     }
+  })
+
+  bot.command('resetar', (ctx) => {
+    const arg = ctx.message.text.split(' ')[1]?.toLowerCase()
+    const removed = shownDealsTracker.resetCategory(arg)
+    const target = arg ? `da categoria <b>${arg}</b>` : `de todas as categorias`
+    ctx.reply(
+      `✅ Histórico limpo!\n\n🗑️ ${removed} produto(s) removidos ${target}.\nPróxima busca trará produtos frescos.`,
+      { parse_mode: 'HTML' }
+    )
   })
 
   bot.command('atualizar', async (ctx) => {
@@ -646,7 +659,7 @@ export function createBot() {
     }
   })
 
-  // Reusable: send up to `limit` random deals from a category
+  // Reusable: send up to `limit` random deals from a category, skipping recently seen ones
   async function sendCategoryDeals(ctx: Ctx, category: DealCategory, limit = 5) {
     const { getCachedDeals } = await import('../../web/server.js')
     const deals = getCachedDeals()
@@ -657,7 +670,19 @@ export function createBot() {
       return
     }
 
-    const sample = pool.sort(() => Math.random() - 0.5).slice(0, limit)
+    let unseen = shownDealsTracker.filterUnseen(category, pool, d => d.id)
+
+    if (unseen.length === 0) {
+      const removed = shownDealsTracker.resetCategory(category)
+      await ctx.reply(
+        `♻️ Você já viu todos os produtos desta categoria! Reiniciando o histórico (${removed} oferta(s) removidas) com produtos frescos.`
+      )
+      unseen = pool
+    }
+
+    const sample = unseen.sort(() => Math.random() - 0.5).slice(0, limit)
+    shownDealsTracker.markShown(category, sample.map(d => d.id))
+
     const meta = CATEGORY_META[category]
     await ctx.reply(`${meta.emoji} <b>${meta.label} — ${sample.length} ofertas</b>`, { parse_mode: 'HTML' })
     for (const deal of sample) {
@@ -869,6 +894,7 @@ export function createBot() {
     { command: 'atualizar', description: 'Buscar novas ofertas agora' },
     { command: 'pelando', description: '🔍 Disparar monitor Pelando agora' },
     { command: 'limpar', description: '🧹 Limpar links expirados do banco' },
+    { command: 'resetar', description: '♻️ Limpar histórico de categoria (ex: /resetar decoracao)' },
     { command: 'feedback', description: '📊 Ver resumo de curtidas e irrelevantes' },
     { command: 'ajuda', description: 'Ver todos os comandos' },
   ])
