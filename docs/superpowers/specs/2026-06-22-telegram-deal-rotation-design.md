@@ -45,7 +45,7 @@ Fluxo após mudança:
 1. Buscar pool do cache (igual hoje)
 2. filterUnseen(category, pool, ttlDays=5)
 3. Se pool filtrado vazio → resetCategory(category) + repetir passo 2
-   (fallback: user nunca vê "nenhuma oferta" por esgotamento)
+   + avisar usuário: "♻️ Você viu todos os produtos desta categoria! Reiniciando o histórico com ofertas frescas."
 4. Amostrar até `limit` deals do pool filtrado
 5. markShown(category, ids selecionados)
 6. Enviar deals
