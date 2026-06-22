@@ -13,7 +13,7 @@ export function registerMLMonitor(
 ): void {
   scheduler.schedule(
     'ml-monitor',
-    '*/30 * * * *',
+    '0 8-22/2 * * *',
     () => lock.withLock('monitor:ml', () => monitor.execute()).then(() => void 0),
   )
 }
