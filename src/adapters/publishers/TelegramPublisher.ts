@@ -599,10 +599,10 @@ export function createBot() {
   bot.command('resetar', (ctx) => {
     const arg = ctx.message.text.split(' ')[1]?.toLowerCase()
     const removed = shownDealsTracker.resetCategory(arg)
-    const target = arg ? `da categoria *${arg}*` : `de todas as categorias`
+    const target = arg ? `da categoria <b>${arg}</b>` : `de todas as categorias`
     ctx.reply(
       `✅ Histórico limpo!\n\n🗑️ ${removed} produto(s) removidos ${target}.\nPróxima busca trará produtos frescos.`,
-      { parse_mode: 'Markdown' }
+      { parse_mode: 'HTML' }
     )
   })
 
