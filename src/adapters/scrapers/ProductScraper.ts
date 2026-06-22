@@ -150,7 +150,17 @@ export async function scrapeProduct(url: string): Promise<ProductData> {
       )
       const mlOriginalPrice = mlOriginalPriceEl?.getAttribute('content') || ''
 
-      // 5. Generic DOM selectors (Amazon, Americanas, etc.)
+      // 5. Amazon-specific selectors
+      const amazonImage =
+        (document.querySelector('#landingImage') as HTMLImageElement)?.src ||
+        (document.querySelector('#imgBlkFront') as HTMLImageElement)?.src ||
+        document.querySelector<HTMLMetaElement>('meta[name="twitter:image"]')?.content || ''
+      const amazonTitle =
+        document.querySelector('#productTitle')?.textContent?.trim() || ''
+      const amazonPrice =
+        document.querySelector('.a-price-whole')?.textContent?.trim() || ''
+
+      // 6. Generic DOM selectors (Americanas, etc.)
       const genericTitle = document.querySelector('h1')?.textContent?.trim()
       const genericPrice =
         document.querySelector('[class*="price-current"]')?.textContent?.trim() ||
@@ -160,16 +170,16 @@ export async function scrapeProduct(url: string): Promise<ProductData> {
         document.querySelector('[class*="origin-price"]')?.textContent?.trim() || ''
 
       return {
-        name: ssrName || ldName || ogTitle || genericTitle || '',
-        price: mlPrice || ldPrice || genericPrice || '',
+        name: ssrName || ldName || ogTitle || amazonTitle || genericTitle || '',
+        price: mlPrice || ldPrice || amazonPrice || genericPrice || '',
         originalPrice: mlOriginalPrice || genericOriginalPrice || '',
-        imageUrl: ssrImage || ldImage || ogImage || '',
+        imageUrl: ssrImage || ldImage || ogImage || amazonImage || '',
         discountPercent: ssrDiscount,
       }
     })
 
     if (!data.name) throw new Error('Não foi possível extrair o nome do produto.')
-    if (!data.imageUrl) throw new Error('Não foi possível extrair a imagem do produto.')
+    // imageUrl ausente é tolerado — wizard continua sem imagem
 
     // Truncate name: 60 chars + ellipsis if cut
     const rawName = data.name.trim()
