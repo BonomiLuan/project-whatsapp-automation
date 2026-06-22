@@ -52,7 +52,11 @@ export async function quickFetchProduct(url: string): Promise<ProductData | null
       html.match(/data-old-hires="(https:[^"]+)"/)?.[1] ||
       ''
 
-    if (!rawName || !imageUrl) return null
+    console.log(`[scraper:quick] url=${res.request?.res?.responseUrl ?? url} name="${rawName.slice(0,60)}" imageUrl="${imageUrl.slice(0,80)}"`)
+    if (!rawName || !imageUrl) {
+      console.log(`[scraper:quick] retornando null — name=${!!rawName} imageUrl=${!!imageUrl}`)
+      return null
+    }
 
     const name = rawName.length > 60 ? rawName.slice(0, 57) + '...' : rawName
 
@@ -88,6 +92,7 @@ export async function scrapeProduct(url: string): Promise<ProductData> {
 
   try {
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 })
+    console.log(`[scraper:playwright] URL final: ${page.url()}`)
     await page.waitForTimeout(2500)
 
     const data = await page.evaluate(() => {
@@ -175,8 +180,12 @@ export async function scrapeProduct(url: string): Promise<ProductData> {
         originalPrice: mlOriginalPrice || genericOriginalPrice || '',
         imageUrl: ssrImage || ldImage || ogImage || amazonImage || '',
         discountPercent: ssrDiscount,
+        _debug: { ssrName, ldName, ogTitle, amazonTitle, genericTitle, ssrImage, ldImage, ogImage, amazonImage },
       }
     })
+
+    console.log(`[scraper:playwright] extraído — name="${data.name}" imageUrl="${data.imageUrl}"`)
+    console.log(`[scraper:playwright] debug:`, JSON.stringify((data as any)._debug))
 
     if (!data.name) throw new Error('Não foi possível extrair o nome do produto.')
     // imageUrl ausente é tolerado — wizard continua sem imagem
