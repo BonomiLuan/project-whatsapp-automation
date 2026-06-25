@@ -14,8 +14,8 @@ export class PgDealRepository implements DealRepository {
     try {
       const { rows } = await pool.query<{ deal_id: string }>(
         `SELECT deal_id FROM deal_history
-         WHERE tenant_id = $1
-           AND sent_at > NOW() - ($2 || ' days')::INTERVAL`,
+         WHERE (tenant_id = $1 AND sent_at > NOW() - ($2 || ' days')::INTERVAL)
+            OR vote = 'dislike'`,
         [tenantId, withinDays]
       )
       return new Set(rows.map(r => r.deal_id))

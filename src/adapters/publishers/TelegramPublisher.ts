@@ -10,19 +10,25 @@ import { generateAffiliateLink, fetchShopeeProductByUrl, expandShortLink, CATEGO
 import { injectAmazonTag, isAmazonUrl } from '../affiliates/AmazonAffiliate.js'
 import { injectMLTag, isMercadoLivreUrl, fetchMLProductInfo, resolveMLShortLink } from '../affiliates/MLAffiliate.js'
 import { type UnifiedDeal } from '../../web/server.js'
-import { createLink, cleanupLinks, truncateLinks, markDealVote, updateLinkImage } from '../db/PgLinkRepository.js'
+import { createLink, cleanupLinks, truncateLinks, markDealVote, updateLinkImage, getDislikedDealIds } from '../db/PgLinkRepository.js'
 import type { DealPublisher } from '../../core/ports/DealPublisher.js'
 import type { Deal, Marketplace } from '../../core/domain/Deal.js'
 import type { Tenant } from '../../core/domain/Tenant.js'
 import { formatMessage } from '../../core/usecases/helpers/formatMessage.js'
 import { shownDealsTracker } from '../store/ShownDealsTracker.js'
+import type { ShopeeCoupon } from '../scrapers/ShopeeCouponScraper.js'
 
 import type { Telegram } from 'telegraf'
 let telegramApi: Telegram | null = null
 let _pelandoTrigger: (() => Promise<void>) | undefined
+let _shopeeCouponTrigger: (() => Promise<void>) | undefined
 
 export function setPelandoTrigger(fn: () => Promise<void>): void {
   _pelandoTrigger = fn
+}
+
+export function setShopeeCouponTrigger(fn: () => Promise<void>): void {
+  _shopeeCouponTrigger = fn
 }
 
 interface WizardState {
@@ -534,20 +540,31 @@ export function createBot() {
     '',
     '/ofertas — ver ofertas de todos os nichos',
     '',
-    '<b>Por sub-nicho (3–5 produtos):</b>',
-    '/higiene — 🧴 Fraldas, lenço, pomada',
-    '/banho — 🛁 Toalha papi, sabonete, shampoo',
-    '/alimentacao — 🍼 Mamadeiras, chupetas',
-    '/enxoval — 👶 Enxoval, body, manta',
-    '/mobilidade — 🚗 Carrinhos, bebê conforto',
-    '/quarto — 🛏️ Berço, decoração, monitor',
-    '/brinquedos — 🧸 Brinquedos educativos',
-    '/saude — 💊 Termômetro, aspirador nasal',
-    '/maternidade — 🤱 Mala maternidade, amamentação',
-    '/fraldas — 🍼 Kits, trocador, pomada assadura',
+    '<b>Bebê &amp; Maternidade:</b>',
+    '/higiene — 🧴 Pomada, lenço, algodão bebê',
+    '/banho — 🛁 Toalha capuz, banheira, esponja bebê',
+    '/alimentacao — 🍼 Mamadeiras, chupetas, babador',
+    '/enxoval — 👶 Body, manta, macacão bebê',
+    '/mobilidade — 🚗 Carrinhos, bebê conforto, cadeirinha',
+    '/quarto — 🛏️ Berço, móbile, babá eletrônica',
+    '/brinquedos — 🧸 Chocalho, mordedor, tapete atividades',
+    '/saude — 💊 Termômetro, aspirador nasal, nebulizador',
+    '/maternidade — 🤱 Mala maternidade, sutiã amamentação',
+    '/fraldas — 🍼 Pampers, Huggies, lenço umedecido',
+    '/moda_infantil — 👗 Conjunto, vestido, legging, tênis infantil',
+    '',
+    '<b>Casa &amp; Rotina:</b>',
     '/limpeza — 🧹 OMO, Ariel, percarbonato, Veja',
-    '/casa — 🏠 Panelas, organizadores, tapetes',
-    '/organizacao — 🗂️ Organizadores de geladeira, armário, cozinha',
+    '/casa — 🏠 Panelas, utensílios, cesto de roupa',
+    '/eletrodomesticos — ⚡ Air fryer, aspirador, ferro, batedeira',
+    '/organizacao — 🗂️ Organizadores geladeira, armário, cozinha',
+    '/decoracao — 🖼️ Quadros, vasos, espelhos, luminárias',
+    '/aromas — 🕯️ Velas, difusor, home spray, sachê',
+    '',
+    '<b>Bem-Estar &amp; Extras:</b>',
+    '/beleza — 💄 Sérum, hidratante, protetor solar, cabelo',
+    '/papelaria — ✏️ Mochila escolar, estojo, caderno, canetinha',
+    '/pets — 🐾 Ração, petisco, cama pet, brinquedo',
     '',
     '/amazon — 📦 Ofertas Amazon do momento',
     '/meli — 🛒 Ofertas Mercado Livre do momento',
@@ -555,6 +572,7 @@ export function createBot() {
     '/cupons — 🎟️ Ver últimos cupons detectados pelo Pelando',
     '/atualizar — buscar novas ofertas agora',
     '/pelando — disparar monitor Pelando agora',
+    '/cupomshopee — 🎟️ Buscar cupons Shopee agora e enviar para o grupo',
     '/feedback — ver resumo de curtidas e irrelevantes',
     '/limpar — 🧹 Limpar links expirados do banco',
     '/resetar — ♻️ Limpar histórico de ofertas vistas (ex: /resetar decoracao)',
@@ -659,11 +677,30 @@ export function createBot() {
     }
   })
 
+  bot.command('cupomshopee', async (ctx) => {
+    if (!_shopeeCouponTrigger) {
+      await ctx.reply('⚠️ Monitor de cupons Shopee não configurado')
+      return
+    }
+    const status = await ctx.reply('🔍 Buscando cupons Shopee...')
+    try {
+      await _shopeeCouponTrigger()
+      await ctx.telegram.editMessageText(
+        ctx.chat!.id, status.message_id, undefined,
+        '✅ Alerta de cupons enviado para o grupo!'
+      )
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Erro desconhecido'
+      await ctx.telegram.editMessageText(ctx.chat!.id, status.message_id, undefined, `❌ ${msg}`)
+    }
+  })
+
   // Reusable: send up to `limit` random deals from a category, skipping recently seen ones
   async function sendCategoryDeals(ctx: Ctx, category: DealCategory, limit = 5) {
     const { getCachedDeals } = await import('../../web/server.js')
     const deals = getCachedDeals()
-    const pool = deals.filter(d => d.category === category)
+    const disliked = await getDislikedDealIds()
+    const pool = deals.filter(d => d.category === category && !disliked.has(d.id))
 
     if (!pool.length) {
       await ctx.reply('🔍 Nenhuma oferta nessa categoria no momento. Tente /atualizar.')
@@ -707,7 +744,9 @@ export function createBot() {
   // One command per sub-niche
   const categoryCommands: DealCategory[] = [
     'higiene', 'alimentacao', 'enxoval', 'mobilidade', 'quarto',
-    'brinquedos', 'saude', 'maternidade', 'casa', 'limpeza', 'banho', 'fraldas', 'decoracao', 'organizacao',
+    'brinquedos', 'saude', 'maternidade', 'casa', 'limpeza', 'banho', 'fraldas',
+    'decoracao', 'organizacao', 'eletrodomesticos', 'aromas', 'beleza',
+    'moda_infantil', 'papelaria', 'pets',
   ]
   for (const cat of categoryCommands) {
     bot.command(cat, (ctx) => sendCategoryDeals(ctx, cat))
@@ -716,7 +755,8 @@ export function createBot() {
   bot.command('amazon', async (ctx) => {
     const { getCachedDeals } = await import('../../web/server.js')
     const deals = getCachedDeals()
-    const pool = deals.filter(d => d.source === 'amazon')
+    const disliked = await getDislikedDealIds()
+    const pool = deals.filter(d => d.source === 'amazon' && !disliked.has(d.id))
     if (!pool.length) {
       await ctx.reply('🔍 Nenhuma oferta Amazon no momento. Tente /atualizar.')
       return
@@ -732,7 +772,8 @@ export function createBot() {
   bot.command('meli', async (ctx) => {
     const { getCachedDeals } = await import('../../web/server.js')
     const deals = getCachedDeals()
-    const pool = deals.filter(d => d.source === 'mercado-livre')
+    const disliked = await getDislikedDealIds()
+    const pool = deals.filter(d => d.source === 'mercado-livre' && !disliked.has(d.id))
     if (!pool.length) {
       await ctx.reply('🔍 Nenhuma oferta Mercado Livre no momento. Tente /atualizar.')
       return
@@ -873,26 +914,33 @@ export function createBot() {
 
   bot.telegram.setMyCommands([
     { command: 'ofertas', description: 'Ver ofertas de todos os nichos' },
-    { command: 'higiene', description: `${CATEGORY_META.higiene.emoji} Fraldas, lenço, pomada` },
-    { command: 'banho', description: `${CATEGORY_META.banho.emoji} Toalha papi, sabonete, shampoo bebê` },
-    { command: 'alimentacao', description: `${CATEGORY_META.alimentacao.emoji} Mamadeiras, chupetas, cadeirinha` },
-    { command: 'enxoval', description: `${CATEGORY_META.enxoval.emoji} Enxoval, body, manta` },
-    { command: 'mobilidade', description: `${CATEGORY_META.mobilidade.emoji} Carrinhos, bebê conforto` },
-    { command: 'quarto', description: `${CATEGORY_META.quarto.emoji} Berço, decoração, monitor` },
-    { command: 'brinquedos', description: `${CATEGORY_META.brinquedos.emoji} Brinquedos educativos` },
-    { command: 'saude', description: `${CATEGORY_META.saude.emoji} Termômetro, aspirador nasal` },
-    { command: 'maternidade', description: `${CATEGORY_META.maternidade.emoji} Mala maternidade, amamentação` },
-    { command: 'fraldas', description: `${CATEGORY_META.fraldas.emoji} Kits, trocador, pomada assadura` },
+    { command: 'higiene', description: `${CATEGORY_META.higiene.emoji} Pomada, lenço, algodão bebê` },
+    { command: 'banho', description: `${CATEGORY_META.banho.emoji} Toalha capuz, banheira, esponja bebê` },
+    { command: 'alimentacao', description: `${CATEGORY_META.alimentacao.emoji} Mamadeiras, chupetas, babador` },
+    { command: 'enxoval', description: `${CATEGORY_META.enxoval.emoji} Body, manta, macacão bebê` },
+    { command: 'mobilidade', description: `${CATEGORY_META.mobilidade.emoji} Carrinhos, bebê conforto, cadeirinha` },
+    { command: 'quarto', description: `${CATEGORY_META.quarto.emoji} Berço, móbile, babá eletrônica` },
+    { command: 'brinquedos', description: `${CATEGORY_META.brinquedos.emoji} Chocalho, mordedor, tapete atividades` },
+    { command: 'saude', description: `${CATEGORY_META.saude.emoji} Termômetro, aspirador nasal, nebulizador` },
+    { command: 'maternidade', description: `${CATEGORY_META.maternidade.emoji} Mala maternidade, sutiã amamentação` },
+    { command: 'fraldas', description: `${CATEGORY_META.fraldas.emoji} Pampers, Huggies, lenço umedecido` },
+    { command: 'moda_infantil', description: `${CATEGORY_META.moda_infantil.emoji} Conjunto, vestido, legging, tênis infantil` },
     { command: 'limpeza', description: `${CATEGORY_META.limpeza.emoji} OMO, Ariel, percarbonato, Veja` },
-    { command: 'casa', description: `${CATEGORY_META.casa.emoji} Panelas, organizadores, tapetes` },
-    { command: 'decoracao', description: `${CATEGORY_META.decoracao.emoji} Quadros, vasos, espelhos, luminárias` },
+    { command: 'casa', description: `${CATEGORY_META.casa.emoji} Panelas, utensílios, cesto de roupa` },
+    { command: 'eletrodomesticos', description: `${CATEGORY_META.eletrodomesticos.emoji} Air fryer, aspirador, ferro, batedeira` },
     { command: 'organizacao', description: `${CATEGORY_META.organizacao.emoji} Organizadores geladeira, armário, cozinha` },
+    { command: 'decoracao', description: `${CATEGORY_META.decoracao.emoji} Quadros, vasos, espelhos, luminárias` },
+    { command: 'aromas', description: `${CATEGORY_META.aromas.emoji} Velas, difusor, home spray, sachê` },
+    { command: 'beleza', description: `${CATEGORY_META.beleza.emoji} Sérum, hidratante, protetor solar, cabelo` },
+    { command: 'papelaria', description: `${CATEGORY_META.papelaria.emoji} Mochila escolar, estojo, caderno` },
+    { command: 'pets', description: `${CATEGORY_META.pets.emoji} Ração, petisco, cama pet, brinquedo` },
     { command: 'amazon', description: '📦 Ofertas Amazon do momento' },
     { command: 'meli', description: '🛒 Ofertas Mercado Livre do momento' },
     { command: 'cupom', description: '🎟️ Montar e enviar um cupom Shopee' },
     { command: 'cupons', description: '🎟️ Ver últimos cupons detectados pelo Pelando' },
     { command: 'atualizar', description: 'Buscar novas ofertas agora' },
     { command: 'pelando', description: '🔍 Disparar monitor Pelando agora' },
+    { command: 'cupomshopee', description: '🎟️ Buscar cupons Shopee agora e enviar para o grupo' },
     { command: 'limpar', description: '🧹 Limpar links expirados do banco' },
     { command: 'resetar', description: '♻️ Limpar histórico de categoria (ex: /resetar decoracao)' },
     { command: 'feedback', description: '📊 Ver resumo de curtidas e irrelevantes' },
@@ -1281,4 +1329,37 @@ export async function sendPelandoCouponToChat(deal: import('../scrapers/PelandoS
 
 function esc(text: string): string {
   return text.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c] || c))
+}
+
+export async function sendCouponAlertToChat(coupons: ShopeeCoupon[], affiliateUrl: string): Promise<void> {
+  const chatIds = getTargetChatIds()
+  if (!telegramApi || chatIds.length === 0) throw new Error('Bot ou TELEGRAM_CHAT_ID não configurado')
+
+  const groupUrl = process.env.WHATSAPP_GROUP_URL || ''
+
+  const couponLines = coupons.length > 0
+    ? coupons.map(c => {
+        let line = `🏷️ ${c.discount}`
+        if (c.condition) line += ` (${c.condition})`
+        return line
+      }).join('\n')
+    : null
+
+  const lines = [
+    `Mamãe, corre! 🛍️ Tem cupom Shopee disponível!`,
+    ``,
+    couponLines,
+    couponLines ? `` : null,
+    `Pega o seu antes de acabar 👇`,
+    affiliateUrl,
+    groupUrl ? `` : null,
+    groupUrl ? `💬 Mais ofertas no grupo:` : null,
+    groupUrl ? groupUrl : null,
+    ``,
+    `#Cupom #Shopee #MamãeEconômica`,
+  ].filter((l): l is string => l !== null).join('\n')
+
+  for (const id of chatIds) {
+    await telegramApi!.sendMessage(id, lines)
+  }
 }

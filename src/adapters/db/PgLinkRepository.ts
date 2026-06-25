@@ -378,6 +378,18 @@ export async function markDealVote(dealId: string, vote: 'like' | 'dislike', tit
   }
 }
 
+export async function getDislikedDealIds(): Promise<Set<string>> {
+  if (!process.env.DATABASE_URL) return new Set()
+  try {
+    const { rows } = await pool.query<{ deal_id: string }>(
+      `SELECT deal_id FROM deal_history WHERE vote = 'dislike'`
+    )
+    return new Set(rows.map(r => r.deal_id))
+  } catch {
+    return new Set()
+  }
+}
+
 export async function getExcludedDealIds(lookbackDays: number): Promise<Set<string>> {
   if (!process.env.DATABASE_URL) return new Set()
   try {

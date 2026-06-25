@@ -190,6 +190,7 @@ export interface UnifiedDeal {
   imageUrl: string
   affiliateUrl: string   // ready-to-use affiliate link
   productLink?: string   // canonical Shopee URL — use as originUrl when generating links with subIds
+  shopId?: number        // Shopee shop ID for voucher matching
   source: 'shopee' | 'amazon' | 'mercado-livre'
   category: DealCategory
   publishedAt: string
@@ -202,6 +203,7 @@ let sentTodayLog: (UnifiedDeal & { sentAt: string })[] = []
 import type { PelandoDeal } from '../adapters/scrapers/PelandoScraper.js'
 const recentCoupons: PelandoDeal[] = []
 export function getCachedCoupons(): PelandoDeal[] { return [...recentCoupons] }
+
 
 // Tracks Pelando deal IDs already processed — prevents sending the same coupon twice
 const seenPelandoIds = new Set<string>()
@@ -221,7 +223,7 @@ export async function refreshDeals() {
   // Shopee Affiliate API only — Pelando is handled by monitorPelando()
   if (process.env.SHOPEE_APP_ID && process.env.SHOPEE_SECRET) {
     try {
-      const shopeeProducts = await fetchShopeeDeals(20)
+      const shopeeProducts = await fetchShopeeDeals(8)
       for (const p of shopeeProducts) {
         const priceNum = parseFloat(p.price)
         const originalNum = p.priceDiscountRate > 0
@@ -239,6 +241,7 @@ export async function refreshDeals() {
           imageUrl: p.imageUrl,
           affiliateUrl: p.offerLink,
           productLink: p.productLink,
+          shopId: p.shopId,
           source: 'shopee',
           category: p.category,
           publishedAt: now,
@@ -646,7 +649,7 @@ app.get('/api/image-proxy', redirectLimiter, async (req, res) => {
 app.listen(PORT, () => {
   console.log(`\n✅ Servidor rodando em http://localhost:${PORT}`)
   createBot()
-  refreshDeals()
+  setTimeout(() => refreshDeals(), 5000)
   const baseUrl = process.env.BASE_URL || ''
   if (!baseUrl || baseUrl.includes('localhost')) {
     console.warn('[links] ⚠️  BASE_URL não configurado ou é localhost — links curtos não vão funcionar em produção')

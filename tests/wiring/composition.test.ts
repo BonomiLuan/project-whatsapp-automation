@@ -91,7 +91,7 @@ describe('composition root wiring', () => {
 
     expect(scheduler.scheduled).toHaveLength(1)
     expect(scheduler.scheduled[0].name).toBe('pelando-monitor')
-    expect(scheduler.scheduled[0].cron).toBe('0 8-22/2 * * *')
+    expect(scheduler.scheduled[0].cron).toBe('30 8-22/4 * * *')
   })
 
   it('registerMLMonitor schedules the ml-monitor job', () => {
@@ -114,7 +114,7 @@ describe('composition root wiring', () => {
     const names = scheduler.scheduled.map(s => s.name)
     expect(names).toContain('suggest-deals')
     expect(names).toContain('reset-rotation')
-    expect(scheduler.scheduled.find(s => s.name === 'suggest-deals')?.cron).toBe('*/15 7-22 * * *')
+    expect(scheduler.scheduled.find(s => s.name === 'suggest-deals')?.cron).toBe('*/30 7-22 * * *')
     expect(scheduler.scheduled.find(s => s.name === 'reset-rotation')?.cron).toBe('0 0 * * *')
   })
 
