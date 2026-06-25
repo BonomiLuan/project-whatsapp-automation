@@ -32,7 +32,8 @@ export type DealCategory =
   | 'higiene' | 'alimentacao' | 'enxoval' | 'mobilidade'
   | 'quarto' | 'brinquedos' | 'saude' | 'maternidade'
   | 'casa' | 'limpeza' | 'banho' | 'fraldas' | 'decoracao'
-  | 'organizacao' | 'geral'
+  | 'organizacao' | 'eletrodomesticos' | 'aromas' | 'beleza'
+  | 'moda_infantil' | 'papelaria' | 'pets' | 'geral'
 
 export interface ShopeeProduct {
   itemId: number
@@ -54,21 +55,27 @@ export interface ShopeeProduct {
 // ── Keyword search by niche category ─────────────────────────────────────────
 
 export const CATEGORY_META: Record<DealCategory, { emoji: string; label: string }> = {
-  higiene:     { emoji: '🧴', label: 'Higiene' },
-  alimentacao: { emoji: '🍼', label: 'Alimentação' },
-  enxoval:     { emoji: '👶', label: 'Enxoval' },
-  mobilidade:  { emoji: '🚗', label: 'Mobilidade' },
-  quarto:      { emoji: '🛏️', label: 'Quarto' },
-  brinquedos:  { emoji: '🧸', label: 'Brinquedos' },
-  saude:       { emoji: '💊', label: 'Saúde' },
-  maternidade: { emoji: '🤱', label: 'Maternidade' },
-  casa:        { emoji: '🏠', label: 'Casa' },
-  limpeza:     { emoji: '🧹', label: 'Limpeza' },
-  banho:       { emoji: '🛁', label: 'Banho Bebê' },
-  fraldas:     { emoji: '🍼', label: 'Fraldas' },
-  decoracao:   { emoji: '🖼️', label: 'Decoração' },
-  organizacao: { emoji: '🗂️', label: 'Organização' },
-  geral:       { emoji: '🛍️', label: 'Geral' },
+  higiene:          { emoji: '🧴', label: 'Higiene' },
+  alimentacao:      { emoji: '🍼', label: 'Alimentação' },
+  enxoval:          { emoji: '👶', label: 'Enxoval' },
+  mobilidade:       { emoji: '🚗', label: 'Mobilidade' },
+  quarto:           { emoji: '🛏️', label: 'Quarto' },
+  brinquedos:       { emoji: '🧸', label: 'Brinquedos' },
+  saude:            { emoji: '💊', label: 'Saúde' },
+  maternidade:      { emoji: '🤱', label: 'Maternidade' },
+  casa:             { emoji: '🏠', label: 'Casa' },
+  limpeza:          { emoji: '🧹', label: 'Limpeza' },
+  banho:            { emoji: '🛁', label: 'Banho Bebê' },
+  fraldas:          { emoji: '🍼', label: 'Fraldas' },
+  decoracao:        { emoji: '🖼️', label: 'Decoração' },
+  organizacao:      { emoji: '🗂️', label: 'Organização' },
+  eletrodomesticos: { emoji: '⚡', label: 'Eletrodomésticos' },
+  aromas:           { emoji: '🕯️', label: 'Aromas & Bem-Estar' },
+  beleza:           { emoji: '💄', label: 'Beleza' },
+  moda_infantil:    { emoji: '👗', label: 'Moda Infantil' },
+  papelaria:        { emoji: '✏️', label: 'Papelaria & Escola' },
+  pets:             { emoji: '🐾', label: 'Pets' },
+  geral:            { emoji: '🛍️', label: 'Geral' },
 }
 
 export const CATEGORY_KEYWORDS: Partial<Record<DealCategory, string[]>> = {
@@ -122,9 +129,41 @@ export const CATEGORY_KEYWORDS: Partial<Record<DealCategory, string[]>> = {
     'planta artificial', 'tapete sala', 'cortina',
   ],
   casa: [
-    'panela antiaderente', 'jogo de panelas', 'organizador cozinha',
-    'cesto roupa suja', 'escorredor de louça', 'porta tempero',
-    'air fryer', 'cafeteira', 'liquidificador',
+    'panela antiaderente', 'jogo de panelas', 'escorredor de louça',
+    'porta tempero', 'cesto roupa suja', 'tábua de cortar',
+    'tigela inox', 'formas de silicone',
+  ],
+  eletrodomesticos: [
+    'air fryer', 'fritadeira elétrica', 'cafeteira elétrica', 'liquidificador',
+    'batedeira', 'processador de alimentos', 'sanduicheira elétrica', 'torradeira',
+    'panela elétrica', 'pipoqueira', 'ferro de passar roupa a vapor',
+    'aspirador de pó vertical', 'purificador de água', 'ventilador de mesa',
+  ],
+  aromas: [
+    'vela aromática', 'difusor de varetas', 'home spray', 'sachê perfumado',
+    'óleo essencial difusor', 'aromatizador elétrico', 'incenso', 'difusor ultrassônico',
+    'pedra aromaterapia', 'vela decorativa perfumada',
+  ],
+  beleza: [
+    'sérum facial vitamina C', 'hidratante corporal', 'protetor solar facial',
+    'máscara capilar', 'esfoliante corporal', 'body splash feminino',
+    'óleo corporal', 'condicionador hidratação', 'escova modeladora cabelo',
+    'removedor de maquiagem', 'creme para mãos',
+  ],
+  moda_infantil: [
+    'conjunto infantil menina', 'vestido infantil', 'legging infantil',
+    'tênis infantil', 'sandália infantil', 'pijama infantil',
+    'conjunto moletom infantil', 'calça jeans infantil', 'body infantil manga longa',
+  ],
+  papelaria: [
+    'mochila escolar infantil', 'estojo escolar', 'caderno espiral',
+    'lápis de cor faber castell', 'canetinha washable', 'kit escolar',
+    'caneta escolar', 'borracha escolar', 'cola bastão', 'pasta documentos escola',
+  ],
+  pets: [
+    'ração gato', 'ração cachorro', 'petisco pet', 'arranhador gato',
+    'cama pet', 'brinquedo gato', 'coleira cachorro', 'comedouro pet automático',
+    'areia para gato', 'tapete higiênico pet',
   ],
   maternidade: [
     'mala maternidade', 'cinta pós parto', 'sutiã amamentação',
@@ -145,7 +184,7 @@ export async function fetchShopeeDeals(limitPerCategory = 8): Promise<ShopeeProd
   for (const [category, keywords] of Object.entries(CATEGORY_KEYWORDS) as [DealCategory, string[]][]) {
     const categoryProducts: ShopeeProduct[] = []
 
-    for (const keyword of keywords.slice(0, 6)) {
+    for (const keyword of keywords.slice(0, 4)) {
       try {
         const data = await gql<{ productOfferV2: { nodes: Omit<ShopeeProduct, 'category'>[] } }>(`
           query {

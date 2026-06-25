@@ -18,10 +18,10 @@ export function registerSuggestionJobs(
   rotationStore: RotationStore,
   tenantRepo: TenantRepository,
 ): void {
-  // Every 15 min during 07–22 — send next suggestion for every active tenant
+  // Every 30 min during 07–22 — send next suggestion for every active tenant
   scheduler.schedule(
     'suggest-deals',
-    '*/15 7-22 * * *',
+    '*/30 7-22 * * *',
     async () => {
       const tenants = await tenantRepo.findAll()
       const parsePrice = (s: string) => parseFloat(s.replace(/[^\d,.]/g, '').replace(',', '.')) || 0

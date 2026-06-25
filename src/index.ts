@@ -24,8 +24,11 @@ import { SuggestDeals } from './core/usecases/SuggestDeals.js'
 import { registerPelandoMonitor } from './jobs/monitorPelando.js'
 import { registerMLMonitor } from './jobs/monitorML.js'
 import { registerSuggestionJobs } from './jobs/cronLock.js'
-import { setPelandoTrigger } from './adapters/publishers/TelegramPublisher.js'
+import { refreshDeals } from './web/server.js'
+import { setPelandoTrigger, setShopeeCouponTrigger, sendCouponAlertToChat } from './adapters/publishers/TelegramPublisher.js'
 import { setTenantRepo } from './web/server.js'
+import { fetchShopeeCoupons, SHOPEE_COUPON_PAGE } from './adapters/scrapers/ShopeeCouponScraper.js'
+import { generateAffiliateLink } from './adapters/affiliates/ShopeeAffiliate.js'
 
 // ── Migration runner ──────────────────────────────────────────────────────────
 async function runMigrations(): Promise<void> {
@@ -71,10 +74,40 @@ setTenantRepo(tenantRepo)
 // ── Wire bot commands ─────────────────────────────────────────────────────────
 setPelandoTrigger(() => pelandoMonitor.execute(undefined, 5))
 
+async function runShopeeCouponAlert(): Promise<void> {
+  const [couponsResult, urlResult] = await Promise.allSettled([
+    fetchShopeeCoupons(),
+    generateAffiliateLink(SHOPEE_COUPON_PAGE),
+  ])
+  const coupons = couponsResult.status === 'fulfilled' ? couponsResult.value : []
+  const affiliateUrl = urlResult.status === 'fulfilled' ? urlResult.value : SHOPEE_COUPON_PAGE
+  await sendCouponAlertToChat(coupons, affiliateUrl)
+}
+
+setShopeeCouponTrigger(runShopeeCouponAlert)
+
 // ── Register jobs ─────────────────────────────────────────────────────────────
 registerPelandoMonitor(scheduler, lock, pelandoMonitor)
-registerMLMonitor(scheduler, lock, mlMonitor)
+// ML monitor disabled — Playwright scraping unreliable; revisit with REST API
+// registerMLMonitor(scheduler, lock, mlMonitor)
 registerSuggestionJobs(scheduler, suggest, rotationStore, tenantRepo)
+
+// Refresh Shopee deal cache every 6 hours (8h, 14h, 20h)
+scheduler.schedule('shopee-refresh', '0 8,14,20 * * *', async () => {
+  console.log('[shopee-refresh] Atualizando cache de produtos...')
+  await refreshDeals()
+})
+
+// Shopee coupon page monitor — every 4h (9h, 13h, 17h, 21h)
+scheduler.schedule('shopee-coupon-monitor', '0 9,13,17,21 * * *', async () => {
+  console.log('[shopee-coupons] Verificando cupons Shopee...')
+  try {
+    await runShopeeCouponAlert()
+    console.log('[shopee-coupons] ✓ Alerta enviado')
+  } catch (err) {
+    console.error('[shopee-coupons] Erro:', err instanceof Error ? err.message : err)
+  }
+})
 
 // ── Start web server (Express + WhatsApp bot + Telegram bot) ──────────────────
 // Note: server.ts is already imported via `setTenantRepo` on line 28 above.
