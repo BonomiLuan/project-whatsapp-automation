@@ -1,8 +1,4 @@
 import axios from 'axios'
-import { chromium } from 'playwright-extra'
-import StealthPlugin from 'puppeteer-extra-plugin-stealth'
-
-chromium.use(StealthPlugin())
 
 function decodeHtmlEntities(str: string): string {
   return str
@@ -22,6 +18,14 @@ function extractOgTag(html: string, property: string): string {
   return html.match(re1)?.[1] ?? html.match(re2)?.[1] ?? ''
 }
 
+export interface ProductData {
+  name: string
+  price: string
+  originalPrice?: string
+  imageUrl: string
+  originalUrl: string
+}
+
 export async function quickFetchProduct(url: string): Promise<ProductData | null> {
   try {
     const res = await axios.get<string>(url, {
@@ -38,29 +42,22 @@ export async function quickFetchProduct(url: string): Promise<ProductData | null
 
     const html = res.data as string
 
-    // OG tags (Shopee, genérico) → fallback para <title> (Amazon não tem OG)
     const rawName = decodeHtmlEntities(
       extractOgTag(html, 'og:title') ||
       html.match(/<title[^>]*>([^<|]+)/i)?.[1]?.trim() ||
       ''
     )
 
-    // OG image → Amazon hiRes/data-old-hires JSON embeds
     const imageUrl =
       extractOgTag(html, 'og:image') ||
       html.match(/"hiRes"\s*:\s*"(https:[^"]+)"/)?.[1] ||
       html.match(/data-old-hires="(https:[^"]+)"/)?.[1] ||
       ''
 
-    console.log(`[scraper:quick] url=${res.request?.res?.responseUrl ?? url} name="${rawName.slice(0,60)}" imageUrl="${imageUrl.slice(0,80)}"`)
-    if (!rawName || !imageUrl) {
-      console.log(`[scraper:quick] retornando null — name=${!!rawName} imageUrl=${!!imageUrl}`)
-      return null
-    }
+    if (!rawName) return null
 
     const name = rawName.length > 60 ? rawName.slice(0, 57) + '...' : rawName
 
-    // "displayPrice" já vem formatado "R$ 173,85"; fallback para "priceAmount"
     const displayPrice = html.match(/"displayPrice"\s*:\s*"([^"]+)"/)?.[1]?.trim()
     const priceAmount = html.match(/"priceAmount"\s*:\s*"?([\d.,]+)"?/)?.[1]
     const price = displayPrice ?? (priceAmount ? formatRawPrice(priceAmount) : '')
@@ -68,141 +65,6 @@ export async function quickFetchProduct(url: string): Promise<ProductData | null
     return { name, price, imageUrl, originalUrl: url }
   } catch {
     return null
-  }
-}
-
-export interface ProductData {
-  name: string
-  price: string
-  originalPrice?: string
-  imageUrl: string
-  originalUrl: string
-}
-
-export async function scrapeProduct(url: string): Promise<ProductData> {
-  const browser = await chromium.launch({ headless: true })
-  const page = await browser.newPage()
-
-  await page.setViewportSize({ width: 1366, height: 768 })
-  await page.setExtraHTTPHeaders({
-    'User-Agent':
-      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Accept-Language': 'pt-BR,pt;q=0.9',
-  })
-
-  try {
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 })
-    console.log(`[scraper:playwright] URL final: ${page.url()}`)
-    await page.waitForTimeout(2500)
-
-    const data = await page.evaluate(() => {
-      // 1. Open Graph meta tags (most reliable, present even in SSR)
-      const ogTitle = document.querySelector<HTMLMetaElement>('meta[property="og:title"]')?.content
-      const ogImage = document.querySelector<HTMLMetaElement>('meta[property="og:image"]')?.content
-
-      // 2. Shopee initialState JSON (embedded in <script> tag — always present)
-      let ssrName = ''
-      let ssrImage = ''
-      let ssrDiscount = ''
-      for (const s of document.querySelectorAll('script:not([src])')) {
-        const t = s.textContent || ''
-        if (!t.includes('"title"') || !t.includes('"image"')) continue
-        const titleMatch = t.match(/"title"\s*:\s*"([^"]{5,200})"/)
-        const discountMatch = t.match(/"show_discount"\s*:\s*(\d+)/)
-        if (titleMatch) ssrName = titleMatch[1]
-        if (discountMatch) ssrDiscount = discountMatch[1]
-
-        // Prefer "images" array (real product photos) over single "image" field
-        // which may point to a video thumbnail
-        if (!ssrImage) {
-          const arrMatch = t.match(/"images"\s*:\s*\[([^\]]{10,})\]/)
-          if (arrMatch) {
-            const hashes = [...arrMatch[1].matchAll(/"([a-z]{2}-[^"]{10,})"/g)].map(m => m[1])
-            if (hashes.length > 0) ssrImage = `https://down-br.img.susercontent.com/file/${hashes[0]}`
-          }
-        }
-        // Fallback: first standalone "image" field
-        if (!ssrImage) {
-          const imageMatch = t.match(/"image"\s*:\s*"([a-z]{2}-[^"]{10,})"/)
-          if (imageMatch) ssrImage = `https://down-br.img.susercontent.com/file/${imageMatch[1]}`
-        }
-
-        if (ssrName && ssrImage) break
-      }
-
-      // 3. JSON-LD structured data (fallback for non-Shopee sites)
-      let ldName = ''
-      let ldPrice = ''
-      let ldImage = ''
-      for (const script of document.querySelectorAll('script[type="application/ld+json"]')) {
-        try {
-          const json = JSON.parse(script.textContent || '{}')
-          const product = json['@type'] === 'Product' ? json : json?.mainEntity
-          if (product?.['@type'] === 'Product') {
-            ldName = product.name || ''
-            ldImage = Array.isArray(product.image) ? product.image[0] : product.image || ''
-            const offers = Array.isArray(product.offers) ? product.offers[0] : product.offers
-            ldPrice = offers?.price || ''
-          }
-        } catch { /* skip */ }
-      }
-
-      // 4. ML price: <meta itemprop="price" content="20.90"> inside .ui-pdp-price__part
-      const mlPriceEl = document.querySelector<HTMLMetaElement>('.ui-pdp-price__part meta[itemprop="price"]')
-      const mlPrice = mlPriceEl?.getAttribute('content') || ''
-      const mlOriginalPriceEl = document.querySelector<HTMLMetaElement>(
-        '.ui-pdp-price__original-value meta[itemprop="price"], .andes-money-amount--previous meta[itemprop="price"]',
-      )
-      const mlOriginalPrice = mlOriginalPriceEl?.getAttribute('content') || ''
-
-      // 5. Amazon-specific selectors
-      const amazonImage =
-        (document.querySelector('#landingImage') as HTMLImageElement)?.src ||
-        (document.querySelector('#imgBlkFront') as HTMLImageElement)?.src ||
-        document.querySelector<HTMLMetaElement>('meta[name="twitter:image"]')?.content || ''
-      const amazonTitle =
-        document.querySelector('#productTitle')?.textContent?.trim() || ''
-      const amazonPrice =
-        document.querySelector('.a-price-whole')?.textContent?.trim() || ''
-
-      // 6. Generic DOM selectors (Americanas, etc.)
-      const genericTitle = document.querySelector('h1')?.textContent?.trim()
-      const genericPrice =
-        document.querySelector('[class*="price-current"]')?.textContent?.trim() ||
-        document.querySelector('meta[property="product:price:amount"]')?.getAttribute('content') || ''
-      const genericOriginalPrice =
-        document.querySelector('[class*="price-before"]')?.textContent?.trim() ||
-        document.querySelector('[class*="origin-price"]')?.textContent?.trim() || ''
-
-      return {
-        name: ssrName || ldName || ogTitle || amazonTitle || genericTitle || '',
-        price: mlPrice || ldPrice || amazonPrice || genericPrice || '',
-        originalPrice: mlOriginalPrice || genericOriginalPrice || '',
-        imageUrl: ssrImage || ldImage || ogImage || amazonImage || '',
-        discountPercent: ssrDiscount,
-        _debug: { ssrName, ldName, ogTitle, amazonTitle, genericTitle, ssrImage, ldImage, ogImage, amazonImage },
-      }
-    })
-
-    console.log(`[scraper:playwright] extraído — name="${data.name}" imageUrl="${data.imageUrl}"`)
-    console.log(`[scraper:playwright] debug:`, JSON.stringify((data as any)._debug))
-
-    if (!data.name) throw new Error('Não foi possível extrair o nome do produto.')
-    // imageUrl ausente é tolerado — wizard continua sem imagem
-
-    // Truncate name: 60 chars + ellipsis if cut
-    const rawName = data.name.trim()
-    const name = rawName.length > 60 ? rawName.slice(0, 57) + '...' : rawName
-
-    return {
-      name,
-      price: formatRawPrice(data.price),
-      originalPrice: formatRawPrice(data.originalPrice) || undefined,
-      imageUrl: data.imageUrl,
-      originalUrl: url,
-    }
-  } finally {
-    await browser.close()
   }
 }
 
