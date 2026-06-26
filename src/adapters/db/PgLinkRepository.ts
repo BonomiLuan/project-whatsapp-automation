@@ -185,6 +185,14 @@ async function _runInit(): Promise<void> {
     await client.query(`
       ALTER TABLE deal_history ADD COLUMN IF NOT EXISTS tenant_id TEXT
     `)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS temp_images (
+        id         TEXT        PRIMARY KEY,
+        image_data BYTEA       NOT NULL,
+        image_mime TEXT        NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `)
     console.log('[links] ✅ Tabela de links pronta (Railway Postgres conectado)')
   } catch (err) {
     console.error('[links] ❌ Falha ao conectar/criar tabela:', err)

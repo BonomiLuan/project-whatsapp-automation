@@ -3,7 +3,7 @@ import { Telegraf, Scenes, session, Markup } from 'telegraf'
 import type { WizardContext } from 'telegraf/scenes'
 import { createReadStream } from 'fs'
 import { resolve } from 'path'
-import { scrapeProduct, quickFetchProduct, type ProductData } from '../scrapers/ProductScraper.js'
+import { quickFetchProduct, type ProductData } from '../scrapers/ProductScraper.js'
 import { buildMessagePayload, fmt } from './format.js'
 import { sendOfferMessage } from './WhatsAppPublisher.js'
 import { generateAffiliateLink, fetchShopeeProductByUrl, expandShortLink, CATEGORY_META, type SubIds, type DealCategory } from '../affiliates/ShopeeAffiliate.js'
@@ -16,7 +16,7 @@ import type { Deal, Marketplace } from '../../core/domain/Deal.js'
 import type { Tenant } from '../../core/domain/Tenant.js'
 import { formatMessage } from '../../core/usecases/helpers/formatMessage.js'
 import { shownDealsTracker } from '../store/ShownDealsTracker.js'
-import type { ShopeeCoupon } from '../scrapers/ShopeeCouponScraper.js'
+interface ShopeeCoupon { discount: string; condition?: string }
 
 import type { Telegram } from 'telegraf'
 let telegramApi: Telegram | null = null
@@ -235,7 +235,7 @@ const offerWizard = new Scenes.WizardScene<Ctx>(
           `🔗 Link ML com tag gerada!\n\n⏳ Tentando extrair dados via navegador...`,
         )
         let mlScraped: ProductData | null = null
-        try { mlScraped = await scrapeProduct(scrapeUrl) } catch { /* segue manual */ }
+        mlScraped = await quickFetchProduct(scrapeUrl)
         if (mlScraped?.name && (mlScraped.price || mlScraped.imageUrl)) {
           product = { ...mlScraped, originalUrl: affiliateUrl }
         } else {
@@ -247,9 +247,9 @@ const offerWizard = new Scenes.WizardScene<Ctx>(
           return ctx.wizard.next()
         }
       } else if (isAmazon) {
-        // Amazon: fetch leve (OG tags) antes de abrir o Playwright
+        // Amazon: fetch leve (OG tags)
         const quick = await quickFetchProduct(scrapeUrl)
-        product = quick ?? await scrapeProduct(scrapeUrl)
+        product = quick ?? { name: '', price: '', imageUrl: '', originalUrl: affiliateUrl }
       } else if (isShopee && shopeeApiInfo?.name && shopeeApiInfo?.imageUrl) {
         // Shopee: API retornou nome + imagem — usa direto, sem Playwright
         const rawName = shopeeApiInfo.name.trim()
@@ -261,8 +261,9 @@ const offerWizard = new Scenes.WizardScene<Ctx>(
           originalUrl: affiliateUrl,
         }
       } else {
-        // Fallback: Playwright (Shopee sem API ou outros sites)
-        product = await scrapeProduct(scrapeUrl)
+        // Fallback: quickFetch (Shopee sem API ou outros sites)
+        const fetched = await quickFetchProduct(scrapeUrl)
+        product = fetched ?? { name: '', price: '', imageUrl: '', originalUrl: affiliateUrl }
         // Preenche lacunas com dados da API Shopee se disponíveis
         if (shopeeApiInfo) {
           if (!product.price) product.price = fmt(shopeeApiInfo.price)
@@ -625,10 +626,10 @@ export function createBot() {
   })
 
   bot.command('atualizar', async (ctx) => {
-    const status = await ctx.reply('🔄 Buscando novas ofertas (Shopee + ML + Pelando)...')
+    const status = await ctx.reply('🔄 Buscando novas ofertas (Shopee)...')
     try {
-      const { refreshDeals, monitorPelando, monitorML, getCachedDeals } = await import('../../web/server.js')
-      await Promise.all([refreshDeals(), monitorPelando(), monitorML()])
+      const { refreshDeals, getCachedDeals } = await import('../../web/server.js')
+      await refreshDeals()
       const count = getCachedDeals().length
       await ctx.telegram.editMessageText(
         ctx.chat!.id, status.message_id, undefined,
@@ -641,22 +642,7 @@ export function createBot() {
   })
 
   bot.command('cupons', async (ctx) => {
-    const { getCachedCoupons } = await import('../../web/server.js')
-    const coupons = getCachedCoupons()
-    if (coupons.length === 0) {
-      await ctx.reply('🎟️ Nenhum cupom Pelando detectado ainda. Eles aparecem automaticamente quando o monitor rodar.')
-      return
-    }
-    const lines = [`🎟️ <b>Últimos ${coupons.length} cupom(ns) detectados:</b>`, '']
-    for (const c of coupons.slice(0, 15)) {
-      lines.push(`<b>${esc(c.store.toUpperCase())}</b>`)
-      lines.push(`📋 <code>${esc(c.couponCode)}</code>`)
-      if (c.price && c.price !== 'Grátis') lines.push(`💰 ${esc(c.price)}`)
-      lines.push(`📦 ${esc(c.title.slice(0, 60))}`)
-      lines.push(`🔗 ${c.dealUrl}`)
-      lines.push('')
-    }
-    await ctx.reply(lines.join('\n'), { parse_mode: 'HTML', link_preview_options: { is_disabled: true } })
+    await ctx.reply('🎟️ Monitor de cupons Pelando removido. Use /cupomshopee para cupons Shopee.')
   })
 
   bot.command('pelando', async (ctx) => {
@@ -1277,54 +1263,6 @@ function getCouponStoreUrl(store: string): { url: string; label: string } | null
     return { url: `https://shopee.com.br/`, label: '🛒 Comprar na Shopee' }
   }
   return null
-}
-
-export async function sendPelandoCouponToChat(deal: import('../scrapers/PelandoScraper.js').PelandoDeal): Promise<void> {
-  const chatIds = getTargetChatIds()
-  if (!telegramApi || chatIds.length === 0) throw new Error('Bot não configurado')
-
-  const groupUrl = process.env.WHATSAPP_GROUP_URL || ''
-  const storeName = deal.store || 'Pelando'
-  const storeLink = getCouponStoreUrl(storeName)
-
-  const cleanTitle = deal.title.replace(/^cupom\s+\S+\s*[-:]\s*/i, '').trim()
-  const message = [
-    `🎟️ <b>CUPOM ${esc(storeName.toUpperCase())}</b>`,
-    ``,
-    `📦 ${esc(cleanTitle)}`,
-    ``,
-    `📋 Código: <code>${esc(deal.couponCode || '')}</code>`,
-    ``,
-    storeLink
-      ? `🛒 Acesse a loja, aplique o cupom e economize!`
-      : `🔗 Ver no Pelando:\n${deal.dealUrl}`,
-    ``,
-    `⚠️ <i>Cupons podem expirar a qualquer momento. Aproveite rápido!</i>`,
-    groupUrl ? `\n💚 Grupo:\n${groupUrl}` : '',
-    ``,
-    `#Cupom #MamãeEconômica`,
-  ].filter(Boolean).join('\n')
-
-  const buttons = Markup.inlineKeyboard([
-    [
-      storeLink
-        ? Markup.button.url(storeLink.label, storeLink.url)
-        : Markup.button.url('🎟️ Ver cupom', deal.dealUrl),
-      Markup.button.url('📋 Ver no Pelando', deal.dealUrl),
-    ],
-  ])
-
-  for (let i = 0; i < chatIds.length; i++) {
-    if (i > 0) await new Promise(r => setTimeout(r, 60_000))
-    const id = chatIds[i]
-    if (deal.imageUrl) {
-      try {
-        await telegramApi!.sendPhoto(id, deal.imageUrl, { caption: message, parse_mode: 'HTML', ...buttons })
-        continue
-      } catch { /* fallback */ }
-    }
-    await telegramApi!.sendMessage(id, message, { parse_mode: 'HTML', ...buttons })
-  }
 }
 
 function esc(text: string): string {

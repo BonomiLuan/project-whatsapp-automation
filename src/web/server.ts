@@ -4,20 +4,18 @@ import axios from 'axios'
 import rateLimit from 'express-rate-limit'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
-import { createHmac, createHash } from 'crypto'
+import { createHmac, createHash, randomBytes } from 'crypto'
 import type { TenantRepository } from '../core/ports/TenantRepository.js'
 import type { Tenant } from '../core/domain/Tenant.js'
-import { scrapeProduct } from '../adapters/scrapers/ProductScraper.js'
 import { buildMessagePayload } from '../adapters/publishers/format.js'
 import { sendOfferMessage } from '../adapters/publishers/WhatsAppPublisher.js'
 import { appendHistory, loadHistory } from '../adapters/db/HistoryRepository.js'
-import { fetchDeals as fetchPelandoDeals } from '../adapters/scrapers/PelandoScraper.js'
 import { fetchShopeeDeals, generateAffiliateLink, CATEGORY_META, CATEGORY_KEYWORDS, type SubIds, type DealCategory } from '../adapters/affiliates/ShopeeAffiliate.js'
 import { fetchMLProductInfo, injectMLTag } from '../adapters/affiliates/MLAffiliate.js'
 import { quickFetchProduct } from '../adapters/scrapers/ProductScraper.js'
 import { createBot, sendProductToChat, sendDealToChat } from '../adapters/publishers/TelegramPublisher.js'
 import { initLinksTable, getLink, getLinkImageData, incrementClick, getLinks, isSsrfAllowed, buildExpiredRedirectUrl, type LinkEntry } from '../adapters/db/PgLinkRepository.js'
-import { withCronLock } from '../adapters/lock/PgAdvisoryLock.js'
+import { pool } from '../adapters/db/pool.js'
 
 // ── Tenant repository injection ───────────────────────────────────────────────
 let _tenantRepo: TenantRepository | null = null
@@ -199,14 +197,6 @@ export interface UnifiedDeal {
 let dealsCache: UnifiedDeal[] = []
 let sentTodayLog: (UnifiedDeal & { sentAt: string })[] = []
 
-// In-memory cache of recently sent Pelando coupons (last 30)
-import type { PelandoDeal } from '../adapters/scrapers/PelandoScraper.js'
-const recentCoupons: PelandoDeal[] = []
-export function getCachedCoupons(): PelandoDeal[] { return [...recentCoupons] }
-
-
-// Tracks Pelando deal IDs already processed — prevents sending the same coupon twice
-const seenPelandoIds = new Set<string>()
 
 function inferCategory(title: string): DealCategory {
   const lower = title.toLowerCase()
@@ -253,109 +243,7 @@ export async function refreshDeals() {
     }
   }
 
-  // Rebuild cache: keep Pelando deals, replace Shopee
-  const pelandoDeals = dealsCache.filter(d => d.source === 'amazon' || d.source === 'mercado-livre')
-  dealsCache = [...pelandoDeals, ...shopeeResults]
-}
-
-export async function monitorPelando(): Promise<void> {
-  const ran = await withCronLock(111222333, _monitorPelando)
-  if (ran === null) console.log('[pelando:monitor] Outra instância já está rodando, pulando ciclo')
-}
-
-async function _monitorPelando(): Promise<void> {
-  console.log('[pelando:monitor] Verificando novos deals e cupons...')
-  try {
-    const pelandoDeals = await fetchPelandoDeals()
-    const now = new Date().toISOString()
-
-    const freshDeals: UnifiedDeal[] = []
-    const newCoupons: import('../adapters/scrapers/PelandoScraper.js').PelandoDeal[] = []
-    let amazonCount = 0, mlCount = 0
-
-    for (const d of pelandoDeals) {
-      const isNew = !seenPelandoIds.has(d.id)
-      seenPelandoIds.add(d.id)
-
-      if (d.couponCode) {
-        if (isNew) newCoupons.push(d)
-        continue  // coupons don't go into dealsCache
-      }
-
-      // Regular deal → add to cache
-      const storeLower = d.store.toLowerCase()
-      const isShopee = storeLower.includes('shopee')
-      const isML = !isShopee && (storeLower.includes('mercado') || storeLower.includes('mercadolivre') || storeLower === 'ml')
-      const source: UnifiedDeal['source'] = isShopee ? 'shopee' : isML ? 'mercado-livre' : 'amazon'
-      if (isML) mlCount++; else if (!isShopee) amazonCount++
-
-      freshDeals.push({
-        id: createHash('sha1').update(d.id).digest('hex').slice(0, 12),
-        title: d.title,
-        price: d.price,
-        discountPercent: d.temperature,
-        store: d.store,
-        imageUrl: d.imageUrl,
-        affiliateUrl: d.dealUrl,
-        source,
-        category: inferCategory(d.title),
-        publishedAt: now,
-      })
-    }
-
-    // Replace Pelando portion of cache; preserve Shopee and ML API deals
-    const shopeeDeals = dealsCache.filter(d => d.source === 'shopee')
-    const mlApiDeals = dealsCache.filter(d => d.source === 'mercado-livre' && !freshDeals.find(f => f.id === d.id))
-    dealsCache = [...shopeeDeals, ...mlApiDeals, ...freshDeals]
-    console.log(`[pelando:monitor] ✓ ${amazonCount} Amazon + ${mlCount} ML | ${newCoupons.length} cupons novos`)
-
-    // Send new coupons immediately
-    if (newCoupons.length > 0) {
-      const { sendPelandoCouponToChat } = await import('../adapters/publishers/TelegramPublisher.js')
-      for (const coupon of newCoupons) {
-        try {
-          await sendPelandoCouponToChat(coupon)
-          recentCoupons.unshift(coupon)
-          if (recentCoupons.length > 30) recentCoupons.pop()
-          console.log(`[pelando:monitor] ✓ Cupom enviado: ${coupon.couponCode} — ${coupon.store}`)
-        } catch (err) {
-          console.error(`[pelando:monitor] Erro ao enviar cupom:`, err instanceof Error ? err.message : err)
-        }
-      }
-    }
-  } catch (err) {
-    console.error('[pelando:monitor] Erro:', err instanceof Error ? err.message : err)
-  }
-}
-
-export async function monitorML(): Promise<void> {
-  console.log('[ml:monitor] Buscando deals ML por categoria...')
-  try {
-    const { fetchMLCategoryDeals } = await import('../adapters/scrapers/MercadoLivreScraper.js')
-    const mlDeals = await fetchMLCategoryDeals(50)
-    const now = new Date().toISOString()
-
-    const freshDeals: UnifiedDeal[] = mlDeals.map(d => ({
-      id: d.id,
-      title: d.title,
-      price: d.price,
-      originalPrice: d.originalPrice,
-      discountPercent: d.discountPercent,
-      store: 'Mercado Livre',
-      imageUrl: d.imageUrl,
-      affiliateUrl: d.affiliateUrl,
-      source: 'mercado-livre' as const,
-      category: d.category,
-      publishedAt: now,
-    }))
-
-    // Replace ML API deals, preserve Shopee + Amazon/Pelando deals
-    const nonMLDeals = dealsCache.filter(d => d.source !== 'mercado-livre')
-    dealsCache = [...nonMLDeals, ...freshDeals]
-    console.log(`[ml:monitor] ✓ ${freshDeals.length} deals ML no cache`)
-  } catch (err) {
-    console.error('[ml:monitor] Erro:', err instanceof Error ? err.message : err)
-  }
+  dealsCache = [...shopeeResults]
 }
 
 export function getCachedDeals() {
@@ -366,17 +254,39 @@ export function getSentToday() {
   return sentTodayLog
 }
 
-// POST /api/scrape
+// POST /api/scrape — axios only, returns partial data on failure (never 500)
 app.post('/api/scrape', async (req, res) => {
   const { url } = req.body as { url?: string }
   if (!url) return res.status(400).json({ error: 'URL é obrigatória' })
+  const product = await quickFetchProduct(url)
+  if (product) {
+    return res.json({ ...product, partial: false })
+  }
+  return res.json({ partial: true, name: '', price: '', imageUrl: '', originalUrl: url })
+})
+
+// POST /api/upload-image — recebe imagem em base64, armazena em temp_images
+app.post('/api/upload-image', async (req, res) => {
+  const { data, mime } = req.body as { data?: string; mime?: string }
+  const ALLOWED_MIMES = ['image/jpeg', 'image/png', 'image/webp']
+  if (!data || !mime || !ALLOWED_MIMES.includes(mime)) {
+    return res.status(400).json({ error: 'Imagem inválida (jpeg/png/webp esperado)' })
+  }
+  const buffer = Buffer.from(data, 'base64')
+  if (buffer.length > 5 * 1024 * 1024) {
+    return res.status(400).json({ error: 'Imagem muito grande (máx 5MB)' })
+  }
+  const id = 'up' + randomBytes(4).toString('hex')
   try {
-    const product = await scrapeProduct(url)
-    res.json(product)
+    await pool.query(
+      'INSERT INTO temp_images (id, image_data, image_mime) VALUES ($1, $2, $3)',
+      [id, buffer, mime]
+    )
+    const base = process.env.BASE_URL || `http://localhost:${PORT}`
+    return res.json({ imageUrl: `${base}/img/upload/${id}` })
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Erro ao extrair produto'
-    console.error('[scrape]', message)
-    res.status(500).json({ error: message })
+    console.error('[upload-image]', err)
+    return res.status(500).json({ error: 'Erro ao salvar imagem' })
   }
 })
 
@@ -560,6 +470,24 @@ app.get('/img/:code', async (req, res) => {
     }
   } catch (err) {
     console.error('[/img/:code]', err)
+    return res.status(502).json({ error: 'Erro ao buscar imagem' })
+  }
+})
+
+// GET /img/upload/:id — serve imagem de upload temporário
+app.get('/img/upload/:id', async (req, res) => {
+  const id = String(req.params.id)
+  try {
+    const { rows } = await pool.query(
+      'SELECT image_data, image_mime FROM temp_images WHERE id = $1',
+      [id]
+    )
+    if (!rows[0]) return res.status(404).json({ error: 'Imagem não encontrada' })
+    res.set('Content-Type', (rows[0].image_mime as string) || 'image/jpeg')
+    res.set('Cache-Control', 'public, max-age=86400')
+    return res.send(rows[0].image_data as Buffer)
+  } catch (err) {
+    console.error('[/img/upload/:id]', err)
     return res.status(502).json({ error: 'Erro ao buscar imagem' })
   }
 })
