@@ -4,18 +4,16 @@ import axios from 'axios'
 import rateLimit from 'express-rate-limit'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
-import { createHmac, createHash, randomBytes } from 'crypto'
+import { createHmac, createHash } from 'crypto'
 import type { TenantRepository } from '../core/ports/TenantRepository.js'
 import type { Tenant } from '../core/domain/Tenant.js'
 import { buildMessagePayload } from '../adapters/publishers/format.js'
 import { sendOfferMessage } from '../adapters/publishers/WhatsAppPublisher.js'
 import { appendHistory, loadHistory } from '../adapters/db/HistoryRepository.js'
-import { fetchShopeeDeals, generateAffiliateLink, CATEGORY_META, CATEGORY_KEYWORDS, type SubIds, type DealCategory } from '../adapters/affiliates/ShopeeAffiliate.js'
-import { fetchMLProductInfo, injectMLTag } from '../adapters/affiliates/MLAffiliate.js'
+import { fetchShopeeDeals, generateAffiliateLink, fetchShopeeProductByUrl, CATEGORY_META, CATEGORY_KEYWORDS, type SubIds, type DealCategory } from '../adapters/affiliates/ShopeeAffiliate.js'
+import { fetchMLProductInfo, injectMLTag, isMercadoLivreUrl } from '../adapters/affiliates/MLAffiliate.js'
 import { quickFetchProduct } from '../adapters/scrapers/ProductScraper.js'
 import { createBot, sendProductToChat, sendDealToChat } from '../adapters/publishers/TelegramPublisher.js'
-import { initLinksTable, getLink, getLinkImageData, incrementClick, getLinks, isSsrfAllowed, buildExpiredRedirectUrl, type LinkEntry } from '../adapters/db/PgLinkRepository.js'
-import { pool } from '../adapters/db/pool.js'
 
 // ── Tenant repository injection ───────────────────────────────────────────────
 let _tenantRepo: TenantRepository | null = null
@@ -26,102 +24,32 @@ const app = express()
 app.set('trust proxy', 1)
 const PORT = process.env.PORT || 3000
 
-// ── Links: image LRU cache ────────────────────────────────────────────────────
-interface ImageCacheEntry { buffer: Buffer; contentType: string; cachedAt: number }
-const imageCache = new Map<string, ImageCacheEntry>()
-const IMAGE_CACHE_MAX = 200
+// ── Image proxy: SSRF allowlist ───────────────────────────────────────────────
+const ALLOWED_IMAGE_HOSTS = [
+  /\.shopee\.com\.br$/,
+  /\.susercontent\.com$/,
+  /\.szcdn\.com$/,
+  /\.ssl-images-amazon\.com$/,
+  /\.media-amazon\.com$/,
+  /\.cloudfront\.net$/,
+  /\.mlstatic\.com$/,
+]
 
-function lruSet(code: string, entry: ImageCacheEntry): void {
-  if (imageCache.size >= IMAGE_CACHE_MAX) {
-    const firstKey = imageCache.keys().next().value
-    if (firstKey !== undefined) imageCache.delete(firstKey)
-  }
-  imageCache.set(code, entry)
+function isImageHostAllowed(url: string): boolean {
+  try {
+    const { hostname } = new URL(url)
+    return ALLOWED_IMAGE_HOSTS.some(re => re.test(hostname))
+  } catch { return false }
 }
 
-// ── Links: rate limiter ───────────────────────────────────────────────────────
-const redirectLimiter = rateLimit({
+// ── Rate limiter for image proxy ──────────────────────────────────────────────
+const proxyLimiter = rateLimit({
   windowMs: 60_000,
-  limit: 60,
+  limit: 120,
   standardHeaders: 'draft-8',
   legacyHeaders: false,
   message: { error: 'Too many requests' },
 })
-
-// ── Links: helpers ────────────────────────────────────────────────────────────
-function esc(str: string): string {
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-}
-
-function getBaseUrl(req: express.Request): string {
-  if (req.protocol === 'http' && req.headers['x-forwarded-proto'] === 'https') {
-    return 'https://' + req.get('host')
-  }
-  const host = req.get('host')
-  if (!host) return process.env.BASE_URL || 'http://localhost:3000'
-  return req.protocol + '://' + host
-}
-
-function buildOGPage(link: LinkEntry, baseUrl: string): string {
-  const title = esc(link.title)
-  const sourceName = link.source === 'ml' ? 'Mercado Livre' : link.source === 'amazon' ? 'Amazon' : 'Shopee'
-  const description = esc(sourceName + ' — Clique para ver a oferta')
-  // og:image: sempre via proxy para evitar bloqueio de hotlinking nas CDNs
-  const ogImage = baseUrl + '/img/' + link.code
-  const proxyImage = ogImage
-  const ogUrl = baseUrl + '/r/' + link.code
-  const sourceColor = link.source === 'amazon' ? '#FF9900' : link.source === 'ml' ? '#FFE600' : '#EE4D2D'
-  const sourceBg = link.source === 'amazon' ? '#232F3E' : link.source === 'ml' ? '#3483FA' : '#fff'
-  const sourceText = link.source === 'amazon' ? '#fff' : link.source === 'ml' ? '#fff' : '#EE4D2D'
-  return `<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta property="og:title" content="${title}">
-<meta property="og:description" content="${description}">
-<meta property="og:image" content="${ogImage}">
-<meta property="og:image:secure_url" content="${ogImage}">
-<meta property="og:image:type" content="image/jpeg">
-<meta property="og:image:width" content="1200">
-<meta property="og:image:height" content="1200">
-<meta property="og:url" content="${ogUrl}">
-<meta property="og:type" content="website">
-<meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:image" content="${ogImage}">
-<meta http-equiv="refresh" content="0;url=${link.affiliate_url}">
-<title>${title}</title>
-<style>
-  *{margin:0;padding:0;box-sizing:border-box}
-  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f5f5;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px}
-  .card{background:#fff;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,.10);max-width:400px;width:100%;overflow:hidden;animation:fadeUp .4s ease}
-  .img-wrap{width:100%;aspect-ratio:1;background:#f0f0f0;overflow:hidden}
-  .img-wrap img{width:100%;height:100%;object-fit:contain;padding:12px}
-  .body{padding:20px}
-  .badge{display:inline-flex;align-items:center;gap:6px;background:${sourceBg};color:${sourceText};border:1.5px solid ${sourceColor};border-radius:20px;font-size:12px;font-weight:600;padding:4px 10px;margin-bottom:12px}
-  .badge-dot{width:8px;height:8px;border-radius:50%;background:${sourceColor}}
-  h1{font-size:15px;font-weight:600;color:#1a1a1a;line-height:1.4;margin-bottom:20px}
-  .redirect{display:flex;align-items:center;gap:10px;color:#888;font-size:13px}
-  .spinner{width:18px;height:18px;border:2px solid #e0e0e0;border-top-color:${sourceColor};border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
-  .footer{text-align:center;padding:12px;font-size:11px;color:#bbb;border-top:1px solid #f0f0f0}
-  @keyframes spin{to{transform:rotate(360deg)}}
-  @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
-</style>
-</head>
-<body>
-<div class="card">
-  <div class="img-wrap"><img src="${proxyImage}" alt="${title}" onerror="this.style.display='none'"></div>
-  <div class="body">
-    <div class="badge"><span class="badge-dot"></span>${sourceName}</div>
-    <h1>${title}</h1>
-    <div class="redirect"><div class="spinner"></div>Redirecionando para a oferta…</div>
-  </div>
-  <div class="footer">Mamãe Econômica 🛍️</div>
-</div>
-<script>setTimeout(()=>{window.location.href=${JSON.stringify(link.affiliate_url)}},300)</script>
-</body>
-</html>`
-}
 
 // ── Auth helpers ──────────────────────────────────────────────────────────────
 const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD || 'admin'
@@ -254,40 +182,51 @@ export function getSentToday() {
   return sentTodayLog
 }
 
-// POST /api/scrape — axios only, returns partial data on failure (never 500)
+// POST /api/scrape — returns partial: false only when all key fields are present
 app.post('/api/scrape', async (req, res) => {
   const { url } = req.body as { url?: string }
   if (!url) return res.status(400).json({ error: 'URL é obrigatória' })
+
+  // Shopee: API gives price + image + generates affiliate short link
+  if (/shopee\.com\.br|s\.shopee\.com\.br|shp\.ee/.test(url)) {
+    try {
+      const [info, affiliateUrl] = await Promise.all([
+        fetchShopeeProductByUrl(url),
+        generateAffiliateLink(url),
+      ])
+      if (info) {
+        const priceNum = parseFloat(info.price)
+        const price = isNaN(priceNum) ? info.price : `R$${priceNum.toFixed(2).replace('.', ',')}`
+        const origNum = info.originalPrice ? parseFloat(info.originalPrice) : NaN
+        const originalPrice = !isNaN(origNum) ? `R$${origNum.toFixed(2).replace('.', ',')}` : undefined
+        return res.json({ name: info.name, price, originalPrice, imageUrl: info.imageUrl, originalUrl: affiliateUrl, affiliateUrl, partial: false })
+      }
+    } catch (err) {
+      console.warn('[scrape:shopee]', err instanceof Error ? err.message : err)
+    }
+    return res.json({ partial: true, name: '', price: '', imageUrl: '', originalUrl: url })
+  }
+
+  // Mercado Livre: public API for price + image + affiliate tag injection
+  if (isMercadoLivreUrl(url)) {
+    try {
+      const info = await fetchMLProductInfo(url)
+      if (info) {
+        const affiliateUrl = await injectMLTag(info.permalink)
+        return res.json({ name: info.name, price: info.price, originalPrice: info.originalPrice, imageUrl: info.imageUrl, originalUrl: affiliateUrl, affiliateUrl, partial: !info.price })
+      }
+    } catch (err) {
+      console.warn('[scrape:ml]', err instanceof Error ? err.message : err)
+    }
+    return res.json({ partial: true, name: '', price: '', imageUrl: '', originalUrl: url })
+  }
+
+  // Amazon: OG scraping — user supplies their own affiliate URL, price likely empty
   const product = await quickFetchProduct(url)
   if (product) {
-    return res.json({ ...product, partial: false })
+    return res.json({ ...product, partial: !product.price })
   }
   return res.json({ partial: true, name: '', price: '', imageUrl: '', originalUrl: url })
-})
-
-// POST /api/upload-image — recebe imagem em base64, armazena em temp_images
-app.post('/api/upload-image', async (req, res) => {
-  const { data, mime } = req.body as { data?: string; mime?: string }
-  const ALLOWED_MIMES = ['image/jpeg', 'image/png', 'image/webp']
-  if (!data || !mime || !ALLOWED_MIMES.includes(mime)) {
-    return res.status(400).json({ error: 'Imagem inválida (jpeg/png/webp esperado)' })
-  }
-  const buffer = Buffer.from(data, 'base64')
-  if (buffer.length > 5 * 1024 * 1024) {
-    return res.status(400).json({ error: 'Imagem muito grande (máx 5MB)' })
-  }
-  const id = 'up' + randomBytes(4).toString('hex')
-  try {
-    await pool.query(
-      'INSERT INTO temp_images (id, image_data, image_mime) VALUES ($1, $2, $3)',
-      [id, buffer, mime]
-    )
-    const base = process.env.BASE_URL || `http://localhost:${PORT}`
-    return res.json({ imageUrl: `${base}/img/upload/${id}` })
-  } catch (err) {
-    console.error('[upload-image]', err)
-    return res.status(500).json({ error: 'Erro ao salvar imagem' })
-  }
 })
 
 // POST /api/affiliate-link — generate Shopee affiliate link from any URL
@@ -407,101 +346,6 @@ app.get('/hoje', (_req, res) => {
   res.sendFile(join(__dirname, '../../public/hoje.html'))
 })
 
-// GET /r/:code — OG tag HTML + meta refresh, rate-limited, click increment
-app.get('/r/:code', redirectLimiter, async (req, res) => {
-  try {
-    const code = String(req.params.code)
-    const link = await getLink(code)
-    if (!link) return res.status(404).json({ error: 'Link não encontrado' })
-    if (new Date() > link.expires_at) {
-      const searchUrl = buildExpiredRedirectUrl(link.source, link.title)
-      return res.redirect(302, searchUrl)
-    }
-    incrementClick(code).catch(err => console.warn('[links] incrementClick error:', err))
-    const baseUrl = getBaseUrl(req)
-    return res.status(200).type('html').send(buildOGPage(link, baseUrl))
-  } catch (err) {
-    console.error('[/r/:code]', err)
-    return res.status(500).json({ error: 'Erro interno' })
-  }
-})
-
-// GET /img/:code — serve stored image bytes first, fall back to proxy
-app.get('/img/:code', async (req, res) => {
-  try {
-    const code = String(req.params.code)
-    const cached = imageCache.get(code)
-    if (cached) {
-      return res.set('Content-Type', cached.contentType).set('Cache-Control', 'public, max-age=86400').send(cached.buffer)
-    }
-    const link = await getLink(code)
-    if (!link) return res.status(404).json({ error: 'Link não encontrado' })
-
-    // Serve from stored bytes (pre-fetched at link creation time — avoids CDN hotlink blocks)
-    const stored = await getLinkImageData(code)
-    if (stored) {
-      lruSet(code, { buffer: stored.buffer, contentType: stored.mime, cachedAt: Date.now() })
-      return res.set('Content-Type', stored.mime).set('Cache-Control', 'public, max-age=86400').send(stored.buffer)
-    }
-
-    // Fallback: proxy the CDN URL (covers old links without stored bytes)
-    if (!isSsrfAllowed(link.image_url)) return res.status(403).json({ error: 'Image domain not allowed' })
-    try {
-      const imageHost = new URL(link.image_url).hostname
-      const referer = imageHost.includes('amazon') ? 'https://www.amazon.com.br/'
-        : imageHost.includes('pelando') ? 'https://www.pelando.com.br/'
-        : imageHost.includes('mercadolivre') || imageHost.includes('mlstatic') ? 'https://www.mercadolivre.com.br/'
-        : 'https://shopee.com.br/'
-      const response = await axios.get(link.image_url, {
-        responseType: 'arraybuffer',
-        timeout: 8000,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-          Referer: referer,
-        },
-      })
-      const buffer = Buffer.from(response.data as ArrayBuffer)
-      if (buffer.length < 5000) return res.status(502).json({ error: 'Imagem bloqueada pelo CDN' })
-      const contentType = (response.headers['content-type'] as string) || 'image/jpeg'
-      lruSet(code, { buffer, contentType, cachedAt: Date.now() })
-      return res.set('Content-Type', contentType).set('Cache-Control', 'public, max-age=86400').send(buffer)
-    } catch {
-      return res.status(502).json({ error: 'Erro ao buscar imagem' })
-    }
-  } catch (err) {
-    console.error('[/img/:code]', err)
-    return res.status(502).json({ error: 'Erro ao buscar imagem' })
-  }
-})
-
-// GET /img/upload/:id — serve imagem de upload temporário
-app.get('/img/upload/:id', async (req, res) => {
-  const id = String(req.params.id)
-  try {
-    const { rows } = await pool.query(
-      'SELECT image_data, image_mime FROM temp_images WHERE id = $1',
-      [id]
-    )
-    if (!rows[0]) return res.status(404).json({ error: 'Imagem não encontrada' })
-    res.set('Content-Type', (rows[0].image_mime as string) || 'image/jpeg')
-    res.set('Cache-Control', 'public, max-age=86400')
-    return res.send(rows[0].image_data as Buffer)
-  } catch (err) {
-    console.error('[/img/upload/:id]', err)
-    return res.status(502).json({ error: 'Erro ao buscar imagem' })
-  }
-})
-
-// GET /api/links — analytics list (protected by /api auth middleware above)
-app.get('/api/links', async (_req, res) => {
-  try {
-    const links = await getLinks(100)
-    return res.json(links)
-  } catch (err) {
-    console.error('[/api/links]', err)
-    return res.status(500).json({ error: 'Erro interno' })
-  }
-})
 
 // GET /api/tenants — list all tenants (protected by /api auth middleware)
 app.get('/api/tenants', async (_req, res) => {
@@ -553,10 +397,10 @@ app.patch('/api/config', async (req, res) => {
 })
 
 // GET /api/image-proxy
-app.get('/api/image-proxy', redirectLimiter, async (req, res) => {
+app.get('/api/image-proxy', proxyLimiter, async (req, res) => {
   const url = req.query.url as string
   if (!url) return res.status(400).send('URL required')
-  if (!isSsrfAllowed(url)) return res.status(403).send('Domain not allowed')
+  if (!isImageHostAllowed(url)) return res.status(403).send('Domain not allowed')
   try {
     const response = await axios.get(url, {
       responseType: 'arraybuffer',
@@ -578,9 +422,4 @@ app.listen(PORT, () => {
   console.log(`\n✅ Servidor rodando em http://localhost:${PORT}`)
   createBot()
   setTimeout(() => refreshDeals(), 5000)
-  const baseUrl = process.env.BASE_URL || ''
-  if (!baseUrl || baseUrl.includes('localhost')) {
-    console.warn('[links] ⚠️  BASE_URL não configurado ou é localhost — links curtos não vão funcionar em produção')
-  }
-  initLinksTable().catch(console.error)
 })

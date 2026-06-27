@@ -171,7 +171,7 @@
   <div class="card">
     <h2>1. Cole o link do produto</h2>
     <div class="input-row">
-      <input type="url" id="productUrl" placeholder="https://s.shopee.com.br/..." />
+      <input type="url" id="productUrl" placeholder="https://s.shopee.com.br/... ou link Amazon/ML com seu tag" />
       <button class="btn btn-primary" id="btnScrape">Extrair</button>
     </div>
     <div class="status" id="scrapeStatus"></div>
@@ -204,13 +204,6 @@
         <div class="field">
           <label>URL da imagem</label>
           <input type="text" id="fieldImageUrl" placeholder="https://..." />
-          <div style="margin-top:6px;display:flex;align-items:center;gap:8px">
-            <label class="btn" style="background:#f5f5f5;color:#333;border:1px solid #ddd;font-size:0.85rem;padding:6px 12px;cursor:pointer;border-radius:6px">
-              📎 Upload de imagem
-              <input type="file" id="fileImage" accept="image/jpeg,image/png,image/webp" style="display:none" />
-            </label>
-            <span id="uploadStatus" style="font-size:0.8rem;color:#666"></span>
-          </div>
         </div>
         <div class="field">
           <label>Link do grupo WhatsApp</label>
@@ -254,13 +247,7 @@
   let currentImageUrl = ''
 
   function updateImagePreview(url) {
-    if (url) {
-      $('previewImg').src = url.startsWith('data:') || url.startsWith('/img/upload/')
-        ? url
-        : `/api/image-proxy?url=${encodeURIComponent(url)}`
-    } else {
-      $('previewImg').src = ''
-    }
+    $('previewImg').src = url ? `/api/image-proxy?url=${encodeURIComponent(url)}` : ''
   }
 
   async function logout() {
@@ -462,12 +449,17 @@
       $('fieldCoupon').value = ''
       $('fieldGroupUrl').value = ''
 
+      // Shopee: update URL field with the ready affiliate link
+      if (data.affiliateUrl) $('productUrl').value = data.affiliateUrl
+
       currentImageUrl = data.imageUrl || ''
       $('fieldImageUrl').value = currentImageUrl
       updateImagePreview(currentImageUrl)
 
       if (data.partial || !data.name) {
         showStatus('scrapeStatus', 'warning', '⚠️ Dados parciais — complete os campos manualmente.')
+      } else if (!data.price) {
+        showStatus('scrapeStatus', 'warning', '⚠️ Preencha o preço do produto.')
       } else {
         hideStatus('scrapeStatus')
       }
@@ -491,38 +483,6 @@
   $('fieldImageUrl').addEventListener('input', () => {
     currentImageUrl = $('fieldImageUrl').value.trim()
     if (currentImageUrl) updateImagePreview(currentImageUrl)
-  })
-
-  // File upload handler
-  $('fileImage').addEventListener('change', async (e) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    if (file.size > 5 * 1024 * 1024) {
-      $('uploadStatus').textContent = '❌ Máximo 5MB'
-      return
-    }
-    $('uploadStatus').textContent = '⏳ Enviando...'
-    try {
-      const base64 = await new Promise((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload = () => resolve(reader.result.split(',')[1])
-        reader.onerror = reject
-        reader.readAsDataURL(file)
-      })
-      const res = await fetch('/api/upload-image', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ data: base64, mime: file.type }),
-      })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error || 'Erro no upload')
-      currentImageUrl = json.imageUrl
-      $('fieldImageUrl').value = currentImageUrl
-      $('previewImg').src = currentImageUrl
-      $('uploadStatus').textContent = '✅ Imagem enviada'
-    } catch (err) {
-      $('uploadStatus').textContent = `❌ ${err.message}`
-    }
   })
 
   // Remove yellow highlight when user types price

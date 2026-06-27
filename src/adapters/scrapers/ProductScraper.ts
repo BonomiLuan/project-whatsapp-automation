@@ -29,7 +29,7 @@ export interface ProductData {
 export async function quickFetchProduct(url: string): Promise<ProductData | null> {
   try {
     const res = await axios.get<string>(url, {
-      timeout: 12000,
+      timeout: 6000,
       responseType: 'text',
       headers: {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',

@@ -1,12 +1,9 @@
 import 'dotenv/config'
-import path from 'path'
-import { runner } from 'node-pg-migrate'
 
 // ── Adapters ──────────────────────────────────────────────────────────────────
-import { PgAdvisoryLock } from './adapters/lock/PgAdvisoryLock.js'
-import { PgRotationStore } from './adapters/store/PgRotationStore.js'
-import { PgDealRepository } from './adapters/db/PgDealRepository.js'
-import { PgTenantRepository } from './adapters/db/PgTenantRepository.js'
+import { InMemoryRotationStore } from './adapters/store/InMemoryRotationStore.js'
+import { InMemoryDealRepository } from './adapters/db/InMemoryDealRepository.js'
+import { InMemoryTenantRepository } from './adapters/db/InMemoryTenantRepository.js'
 import { TelegramPublisher } from './adapters/publishers/TelegramPublisher.js'
 import { NodeCronScheduler } from './adapters/scheduler/NodeCronScheduler.js'
 import { AmazonAffiliateLinkBuilder } from './adapters/affiliates/AmazonAffiliate.js'
@@ -24,27 +21,10 @@ import { setShopeeCouponTrigger, sendCouponAlertToChat } from './adapters/publis
 import { setTenantRepo } from './web/server.js'
 import { generateAffiliateLink } from './adapters/affiliates/ShopeeAffiliate.js'
 
-// ── Migration runner ──────────────────────────────────────────────────────────
-async function runMigrations(): Promise<void> {
-  await runner({
-    databaseUrl: process.env.DATABASE_URL!,
-    dir: path.resolve(process.cwd(), 'migrations'),
-    direction: 'up',
-    migrationsTable: 'pgmigrations',
-    log: (msg: string) => console.log('[migrations]', msg),
-  })
-}
-
-// ── Boot ──────────────────────────────────────────────────────────────────────
-console.log('[boot] running migrations...')
-await runMigrations()
-console.log('[boot] migrations complete')
-
 // ── Instantiate adapters ──────────────────────────────────────────────────────
-const lock = new PgAdvisoryLock()
-const rotationStore = new PgRotationStore()
-const dealRepo = new PgDealRepository()
-const tenantRepo = new PgTenantRepository()
+const rotationStore = new InMemoryRotationStore()
+const dealRepo = new InMemoryDealRepository()
+const tenantRepo = new InMemoryTenantRepository()
 const telegramPublisher = new TelegramPublisher()
 const scheduler = new NodeCronScheduler()
 
